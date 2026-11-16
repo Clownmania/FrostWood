@@ -44,7 +44,9 @@ export type BuildingId =
   | 'tannery'
   | 'forge'
   | 'tamingPen'
-  | 'stormShelter';
+  | 'stormShelter'
+  | 'windbreak'
+  | 'thermalConduit';
 
 export type ShelterPhase = 'unbuilt' | 'ready' | 'active' | 'cooldown';
 
@@ -163,6 +165,8 @@ export interface UpgradeLevels {
   forge: number; // 0..3
   tamingPen?: number; // 0..3
   stormShelter?: number; // 0..3
+  windbreak?: number; // 0..3
+  thermalConduit?: number; // 0..3
   festivalPavilion?: number; // 0..2
   iceMonument?: number; // 0..2
 }
@@ -197,6 +201,8 @@ export interface BuildingSpec {
   woodPerSec: number;
   goldPerSec: number;
   warmthRadius: number;
+  windResistanceBonusPct?: number;
+  heatRetentionBonusPct?: number;
   description: string;
 }
 
@@ -794,6 +800,28 @@ export interface ChatLogEntry {
   rarity?: ItemRarity;
 }
 
+export type ZoneWeatherSeverity = 'sheltered' | 'mild' | 'moderate' | 'severe' | 'extreme';
+
+export interface ZoneWeatherEffectState {
+  id: string;
+  name: string;
+  subtitle: string;
+  zone: ZoneId;
+  weather: WeatherKind;
+  severity: ZoneWeatherSeverity;
+  rawMovePenaltyPct: number;
+  rawGatherPenaltyPct: number;
+  windResistancePct: number;
+  heatRetentionPct: number;
+  requiredWindResistancePct: number;
+  requiredHeatRetentionPct: number;
+  effectiveMoveSpeedMult: number;
+  effectiveGatherEfficiencyMult: number;
+  effectiveChillMult: number;
+  mitigated: boolean;
+  infrastructureHint: string;
+}
+
 export interface HudSnapshot {
   phase: GamePhase;
   victory: boolean;
@@ -853,6 +881,7 @@ export interface HudSnapshot {
   weather: WeatherKind;
   weatherTimeLeft: number;
   frostIntensity: number;
+  zoneWeatherEffect: ZoneWeatherEffectState;
   dayNight: DayNightState;
   calendar: CalendarState;
   dailyObjective: DailyObjective;

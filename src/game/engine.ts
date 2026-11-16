@@ -9,6 +9,7 @@ import {
   applyObjectiveReward,
   calculatePassiveRates,
   computeScreenFrostIntensity,
+  computeZoneWeatherStatusEffect,
   createDailyObjective,
   getAxeSpec,
   getBowSpec,
@@ -69,9 +70,11 @@ import {
   createStormShelterMesh,
   createTamingPenMesh,
   createTanneryMesh,
+  createThermalConduitMesh,
   createTreeModel,
   createWaystationBrazierModel,
   createWildIceSculptureModel,
+  createWindbreakPalisadeMesh,
   createTimberColossusModel,
   createCryoSovereignModel,
   createCavernWardenModel,
@@ -722,6 +725,8 @@ export class FrostwoodEngine {
   private forgeGroup: THREE.Group | null = null;
   private tamingPenGroup: THREE.Group | null = null;
   private stormShelterVisual: StormShelterVisual | null = null;
+  private windbreakGroup: THREE.Group | null = null;
+  private thermalConduitGroup: THREE.Group | null = null;
   private festivalPavilionGroup: THREE.Group | null = null;
   private iceMonumentGroup: THREE.Group | null = null;
   private craftingStationVisual: CraftingStationVisual | null = null;
@@ -2321,6 +2326,54 @@ export class FrostwoodEngine {
       this.level1Group.add(marker);
     }
 
+    // Windbreak Palisade (Wind-Resistant Infrastructure) or plot marker
+    if (this.windbreakGroup) {
+      this.windbreakGroup.parent?.remove(this.windbreakGroup);
+      this.windbreakGroup = null;
+    }
+    const windbreakLevel = this.levels.windbreak ?? 0;
+    if (windbreakLevel > 0) {
+      this.windbreakGroup = createWindbreakPalisadeMesh(windbreakLevel, this.palette);
+      this.windbreakGroup.position.copy(BUILDING_POSITIONS.windbreak);
+      this.windbreakGroup.rotation.y = Math.atan2(
+        -BUILDING_POSITIONS.windbreak.x,
+        -BUILDING_POSITIONS.windbreak.z,
+      );
+      this.level1Group.add(this.windbreakGroup);
+    } else {
+      this.windbreakGroup = createPlotMarkerMesh(this.palette);
+      this.windbreakGroup.position.copy(BUILDING_POSITIONS.windbreak);
+      this.windbreakGroup.rotation.y = Math.atan2(
+        -BUILDING_POSITIONS.windbreak.x,
+        -BUILDING_POSITIONS.windbreak.z,
+      );
+      this.level1Group.add(this.windbreakGroup);
+    }
+
+    // Thermal Conduit (Heat-Retaining Infrastructure) or plot marker
+    if (this.thermalConduitGroup) {
+      this.thermalConduitGroup.parent?.remove(this.thermalConduitGroup);
+      this.thermalConduitGroup = null;
+    }
+    const thermalLevel = this.levels.thermalConduit ?? 0;
+    if (thermalLevel > 0) {
+      this.thermalConduitGroup = createThermalConduitMesh(thermalLevel, this.palette);
+      this.thermalConduitGroup.position.copy(BUILDING_POSITIONS.thermalConduit);
+      this.thermalConduitGroup.rotation.y = Math.atan2(
+        -BUILDING_POSITIONS.thermalConduit.x,
+        -BUILDING_POSITIONS.thermalConduit.z,
+      );
+      this.level1Group.add(this.thermalConduitGroup);
+    } else {
+      this.thermalConduitGroup = createPlotMarkerMesh(this.palette);
+      this.thermalConduitGroup.position.copy(BUILDING_POSITIONS.thermalConduit);
+      this.thermalConduitGroup.rotation.y = Math.atan2(
+        -BUILDING_POSITIONS.thermalConduit.x,
+        -BUILDING_POSITIONS.thermalConduit.z,
+      );
+      this.level1Group.add(this.thermalConduitGroup);
+    }
+
     // Seasonal Festival Pavilion (plot marker visible when event is active; stays standing once built)
     if (this.festivalPavilionGroup) {
       this.festivalPavilionGroup.parent?.remove(this.festivalPavilionGroup);
@@ -2857,9 +2910,11 @@ export class FrostwoodEngine {
         ? { wood: 110, pelts: 34, stone: 48, ice: 12, gold: 320, meat: 18 }
         : this.initialGearReady
           ? { wood: 180, pelts: 48, stone: 42, ice: 14, gold: 520, meat: 18 }
-          : this.initialPetShowcase
-            ? { ...INITIAL_RESOURCES, meat: Math.max(10, INITIAL_RESOURCES.meat ?? 0), gold: Math.max(80, INITIAL_RESOURCES.gold) }
-            : { ...INITIAL_RESOURCES };
+          : this.initialBaseTier !== null
+            ? { wood: 320, pelts: 65, stone: 100, ice: 32, gold: 880, meat: 28 }
+            : this.initialPetShowcase
+              ? { ...INITIAL_RESOURCES, meat: Math.max(10, INITIAL_RESOURCES.meat ?? 0), gold: Math.max(80, INITIAL_RESOURCES.gold) }
+              : { ...INITIAL_RESOURCES };
     this.levels = {
       ...INITIAL_LEVELS,
       ...(this.initialBaseTier !== null
@@ -3041,6 +3096,14 @@ export class FrostwoodEngine {
       `Expedition begun in ${ZONE_SPECS[startZone].name} (${ZONE_SPECS[startZone].difficultyMult}x Survival).`,
       'cyan',
     );
+    const startWeatherEffect = this.getActiveZoneWeatherEffect();
+    if (!startWeatherEffect.mitigated) {
+      this.pushChatLog(
+        'notification',
+        `Zone Weather: ${startWeatherEffect.name} (${Math.round((startWeatherEffect.effectiveMoveSpeedMult - 1) * 100)}% Move, ${Math.round((startWeatherEffect.effectiveGatherEfficiencyMult - 1) * 100)}% Harvest) · ${startWeatherEffect.infrastructureHint}`,
+        'amber',
+      );
+    }
     this.showToast(
       startZone === 'city'
         ? 'Welcome to Frostcave City — trade Coins & Meat with cavern merchants!'
@@ -3439,6 +3502,16 @@ export class FrostwoodEngine {
     this.audio.playUpgrade();
     const bPos = BUILDING_POSITIONS[id];
     this.particles.spawnBurst(bPos.x, 2.2, bPos.z, 0xffc74d, 24, 6.5, 1.3, 5);
+    const updatedWeatherEffect = this.getActiveZoneWeatherEffect();
+    if (id === 'windbreak' || id === 'thermalConduit' || id === 'forge' || id === 'stormShelter') {
+      this.pushChatLog(
+        'notification',
+        `Built ${next.name}! Infrastructure Shield: ${updatedWeatherEffect.windResistancePct}% Wind Resist · ${updatedWeatherEffect.heatRetentionPct}% Heat Retain.`,
+        'green',
+      );
+    } else {
+      this.pushChatLog('notification', `Built ${next.name} (Lv ${next.level}) in Camp Base.`, 'amber');
+    }
     this.showToast(`Built ${next.name}!`);
 
     if (isEmpireVictory(this.levels, this.endlessMode)) {
@@ -3837,6 +3910,26 @@ export class FrostwoodEngine {
             ? 'Returned to Level 1: Frostwood Valley (1x Baseline Survival)!'
             : `Entered ${zSpec.name} (${zSpec.subtitle} · ${zSpec.difficultyMult}x Survival Difficulty)!`,
       );
+      const zEffect = this.getActiveZoneWeatherEffect();
+      if (nextZone === 'city') {
+        this.pushChatLog(
+          'notification',
+          `Entered ${zSpec.name}: ${zEffect.name} (+5% Move & +5% Harvest).`,
+          'green',
+        );
+      } else if (zEffect.mitigated) {
+        this.pushChatLog(
+          'notification',
+          `Entered ${zSpec.name}: ${zEffect.name} mitigated by Base Infrastructure (${zEffect.windResistancePct}% Wind / ${zEffect.heatRetentionPct}% Heat)!`,
+          'green',
+        );
+      } else {
+        this.pushChatLog(
+          'notification',
+          `Zone Hazard: ${zEffect.name} (${Math.round((zEffect.effectiveMoveSpeedMult - 1) * 100)}% Move, ${Math.round((zEffect.effectiveGatherEfficiencyMult - 1) * 100)}% Harvest) · ${zEffect.infrastructureHint}`,
+          'amber',
+        );
+      }
       this.emitHudSnapshot();
     }
   }
@@ -4657,11 +4750,13 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
     const speedScale =
       computeCraftSpeedScale(this.activeBuffs) *
       prepBonus.moveSpeedMult *
       wingsSpec.moveSpeedMult *
       petBonuses.moveSpeedMult *
+      zoneWeatherEffect.effectiveMoveSpeedMult *
       (isCreeping
         ? skillBonuses.creepSpeedMult * gearBonuses.creepSpeedMult
         : skillBonuses.moveSpeedMult * gearBonuses.moveSpeedMult);
@@ -4890,13 +4985,22 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
     const dmgScale =
       computeCraftDamageScale(this.activeBuffs) *
       gearBonuses.damageMult *
       wingsSpec.damageMult *
       prepBonus.damageMult *
       petBonuses.damageMult;
-    const hitPower = Math.round(spec.power * dmgScale * skillBonuses.axePowerMult);
+    const hitPower = Math.max(
+      1,
+      Math.round(
+        spec.power *
+          dmgScale *
+          skillBonuses.axePowerMult *
+          zoneWeatherEffect.effectiveGatherEfficiencyMult,
+      ),
+    );
     const animalCleavePower = Math.round(spec.power * dmgScale * skillBonuses.huntDamageMult * 0.9);
     const effectiveCooldown = spec.cooldown * gearBonuses.cooldownMult;
     this.attackCooldown = effectiveCooldown;
@@ -5126,15 +5230,20 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
-    const woodTotal = Math.round(
-      tree.woodYield *
-        harvestMultiplier *
-        skillBonuses.gatherYieldMult *
-        gearBonuses.gatherYieldMult *
-        craftYieldMult *
-        calMods.woodMult *
-        petBonuses.gatherYieldMult *
-        zSpec.yieldMult,
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
+    const woodTotal = Math.max(
+      1,
+      Math.round(
+        tree.woodYield *
+          harvestMultiplier *
+          skillBonuses.gatherYieldMult *
+          gearBonuses.gatherYieldMult *
+          craftYieldMult *
+          calMods.woodMult *
+          petBonuses.gatherYieldMult *
+          zoneWeatherEffect.effectiveGatherEfficiencyMult *
+          zSpec.yieldMult,
+      ),
     );
     const bundles = tree.kind === 'elder' ? 3 : 2;
     const perBundle = Math.max(1, Math.ceil(woodTotal / bundles));
@@ -5185,14 +5294,19 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
-    const stoneTotal = Math.round(
-      boulder.stoneYield *
-        harvestMultiplier *
-        skillBonuses.gatherYieldMult *
-        gearBonuses.gatherYieldMult *
-        craftYieldMult *
-        petBonuses.gatherYieldMult *
-        zSpec.yieldMult,
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
+    const stoneTotal = Math.max(
+      1,
+      Math.round(
+        boulder.stoneYield *
+          harvestMultiplier *
+          skillBonuses.gatherYieldMult *
+          gearBonuses.gatherYieldMult *
+          craftYieldMult *
+          petBonuses.gatherYieldMult *
+          zoneWeatherEffect.effectiveGatherEfficiencyMult *
+          zSpec.yieldMult,
+      ),
     );
     const bundles = 2;
     const perBundle = Math.max(1, Math.ceil(stoneTotal / bundles));
@@ -5243,15 +5357,17 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
     const baseIce = Math.max(sculp.iceYield, profile.sculptureIceYield);
     const totalIce = Math.max(
-      baseIce,
+      1,
       Math.round(
         baseIce *
           skillBonuses.gatherYieldMult *
           gearBonuses.gatherYieldMult *
           craftYieldMult *
           petBonuses.gatherYieldMult *
+          zoneWeatherEffect.effectiveGatherEfficiencyMult *
           zSpec.yieldMult,
       ),
     );
@@ -5452,12 +5568,25 @@ export class FrostwoodEngine {
 
       const zSpec = ZONE_SPECS[animal.zone];
       const { harvestMultiplier } = calculatePassiveRates(this.levels);
-      const peltsAwarded = Math.round(
-        spec.peltDrop * harvestMultiplier * skillBonuses.peltYieldMult * zSpec.yieldMult,
+      const zoneWeatherEffect = this.getActiveZoneWeatherEffect();
+      const peltsAwarded = Math.max(
+        1,
+        Math.round(
+          spec.peltDrop *
+            harvestMultiplier *
+            skillBonuses.peltYieldMult *
+            zoneWeatherEffect.effectiveGatherEfficiencyMult *
+            zSpec.yieldMult,
+        ),
       );
       const meatAwarded = Math.max(
         1,
-        Math.round(spec.meatDrop * harvestMultiplier * zSpec.yieldMult),
+        Math.round(
+          spec.meatDrop *
+            harvestMultiplier *
+            zoneWeatherEffect.effectiveGatherEfficiencyMult *
+            zSpec.yieldMult,
+        ),
       );
       const goldAwarded = Math.round(spec.goldDrop * zSpec.yieldMult);
       const y = groundHeightAt(animal.x, animal.z) + 0.5;
@@ -8143,6 +8272,12 @@ export class FrostwoodEngine {
       } else {
         this.showToast(`${wp.label} drifting across the pines.`);
       }
+      const zEffect = this.getActiveZoneWeatherEffect();
+      this.pushChatLog(
+        'notification',
+        `Weather Shift (${wp.label}): ${zEffect.name} — Move ${Math.round(zEffect.effectiveMoveSpeedMult * 100)}%, Harvest ${Math.round(zEffect.effectiveGatherEfficiencyMult * 100)}%.`,
+        this.weather === 'blizzard' ? 'amber' : 'cyan',
+      );
       this.emitHudSnapshot();
     }
 
@@ -8780,7 +8915,9 @@ export class FrostwoodEngine {
     const zSpec = ZONE_SPECS[this.activeZone];
     const hearthDist = Math.hypot(this.playerX - zSpec.hearthX, this.playerZ - zSpec.hearthZ);
     const effectiveWarmthRadius =
-      this.activeZone === 'level1' ? warmthRadius : zSpec.hearthWarmthRadius;
+      this.activeZone === 'level1'
+        ? warmthRadius
+        : zSpec.hearthWarmthRadius + (this.levels.thermalConduit ?? 0) * 2.2;
     const nearCampfire = hearthDist <= effectiveWarmthRadius;
     const inStormShelter = this.activeZone === 'level1' && this.stormShelter.shielded;
     const chillScale = computeCraftChillScale(this.weather, this.activeBuffs);
@@ -8794,6 +8931,7 @@ export class FrostwoodEngine {
       this.activePetUid,
       this.levels.tamingPen ?? 0,
     );
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect(nearCampfire);
 
     const next = stepWarmthAndHealth({
       hp: this.hp,
@@ -8812,6 +8950,7 @@ export class FrostwoodEngine {
         prepBonus.coldDecayMult *
         calMods.chillMult *
         petBonuses.coldDecayMult *
+        zoneWeatherEffect.effectiveChillMult *
         zSpec.chillMult,
       campfireRecoveryMult: skillBonuses.campfireRecoveryMult,
       timeOfDay: this.timeOfDay,
@@ -8854,6 +8993,33 @@ export class FrostwoodEngine {
     this.camera.lookAt(_rayOrigin);
   }
 
+  private getActiveZoneWeatherEffect(nearCampfireOverride?: boolean) {
+    const zSpec = ZONE_SPECS[this.activeZone];
+    const nearCampfire =
+      nearCampfireOverride !== undefined
+        ? nearCampfireOverride
+        : (() => {
+            const { warmthRadius } = calculatePassiveRates(this.levels);
+            const effectiveWarmthR =
+              this.activeZone === 'level1'
+                ? warmthRadius
+                : zSpec.hearthWarmthRadius + (this.levels.thermalConduit ?? 0) * 2.2;
+            return (
+              Math.hypot(this.playerX - zSpec.hearthX, this.playerZ - zSpec.hearthZ) <=
+              effectiveWarmthR
+            );
+          })();
+    const inStormShelter = this.activeZone === 'level1' && this.stormShelter.shielded;
+    return computeZoneWeatherStatusEffect({
+      zone: this.activeZone,
+      weather: this.weather,
+      levels: this.levels,
+      nearCampfire,
+      inStormShelter,
+      activeBuffs: this.activeBuffs,
+    });
+  }
+
   public getHudSnapshot(): HudSnapshot {
     const rates = calculatePassiveRates(this.levels);
     const zSpec = ZONE_SPECS[this.activeZone];
@@ -8865,8 +9031,11 @@ export class FrostwoodEngine {
     );
     const hearthDist = Math.hypot(this.playerX - zSpec.hearthX, this.playerZ - zSpec.hearthZ);
     const effectiveWarmthRadius =
-      this.activeZone === 'level1' ? rates.warmthRadius : zSpec.hearthWarmthRadius;
+      this.activeZone === 'level1'
+        ? rates.warmthRadius
+        : zSpec.hearthWarmthRadius + (this.levels.thermalConduit ?? 0) * 2.2;
     const nearCampfire = hearthDist <= effectiveWarmthRadius;
+    const zoneWeatherEffect = this.getActiveZoneWeatherEffect(nearCampfire);
 
     const distCamp = Math.hypot(this.playerX, this.playerZ);
     const distTannery = Math.hypot(
@@ -9245,6 +9414,7 @@ export class FrostwoodEngine {
         inStormShelter: this.activeZone === 'level1' && this.stormShelter.shielded,
         timeOfDay: this.timeOfDay,
       }),
+      zoneWeatherEffect,
       dayNight: buildDayNightState(this.timeOfDay, this.cycleDayNumber),
       calendar: buildCalendarState(this.cycleDayNumber),
       dailyObjective: {

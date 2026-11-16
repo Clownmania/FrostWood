@@ -644,6 +644,8 @@ export function GameHud({
 
   const buildingIds: BuildingId[] = [
     'cabin',
+    'windbreak',
+    'thermalConduit',
     'lumberCamp',
     'sawmill',
     'tannery',
@@ -1749,6 +1751,106 @@ export function GameHud({
                 })}
               </div>
 
+              {/* Zone-Specific Weather Status Effect & Infrastructure Mitigation Plaque */}
+              {(() => {
+                const zw = hud.zoneWeatherEffect;
+                const moveDeltaPct = Math.round((zw.effectiveMoveSpeedMult - 1) * 100);
+                const gatherDeltaPct = Math.round((zw.effectiveGatherEfficiencyMult - 1) * 100);
+                const moveStr =
+                  moveDeltaPct > 0
+                    ? `+${moveDeltaPct}% Move`
+                    : moveDeltaPct < 0
+                      ? `${moveDeltaPct}% Move`
+                      : '100% Move';
+                const gatherStr =
+                  gatherDeltaPct > 0
+                    ? `+${gatherDeltaPct}% Harvest`
+                    : gatherDeltaPct < 0
+                      ? `${gatherDeltaPct}% Harvest`
+                      : '100% Harvest';
+                const borderCls = zw.mitigated
+                  ? 'bg-[#122b36]/94 border-[#8ed49a]/65'
+                  : zw.severity === 'extreme' || zw.severity === 'severe'
+                    ? 'bg-[#2d141c]/95 border-[#f87171]/75'
+                    : 'bg-[#1e2638]/94 border-[#f6c344]/65';
+                return (
+                  <div
+                    data-testid="zone-weather-effect-status"
+                    data-effect-id={zw.id}
+                    data-severity={zw.severity}
+                    data-mitigated={zw.mitigated ? 'true' : 'false'}
+                    className={`pointer-events-auto w-60 sm:w-72 rounded-lg border px-2.5 py-1.5 shadow-[0_4px_14px_rgba(8,14,24,0.52)] ${borderCls}`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-[10px] sm:text-[11px] font-bold text-[#f4efe6] truncate">
+                        {zw.name}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider shrink-0 ${
+                          zw.mitigated
+                            ? 'bg-[#163d2b] text-[#8ed49a] border border-[#8ed49a]/50'
+                            : zw.severity === 'extreme' || zw.severity === 'severe'
+                              ? 'bg-[#451218] text-[#fca5a5] border border-[#f87171]/60'
+                              : 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/55'
+                        }`}
+                      >
+                        {zw.mitigated ? 'Mitigated' : `${zw.severity} Hazard`}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-bold tabular-nums">
+                      <span
+                        data-testid="zone-weather-move-impact"
+                        className={
+                          moveDeltaPct < 0
+                            ? 'text-[#fca5a5]'
+                            : moveDeltaPct > 0
+                              ? 'text-[#8ed49a]'
+                              : 'text-[#dce6f2]'
+                        }
+                      >
+                        {moveStr}
+                      </span>
+                      <span
+                        data-testid="zone-weather-gather-impact"
+                        className={
+                          gatherDeltaPct < 0
+                            ? 'text-[#fdba74]'
+                            : gatherDeltaPct > 0
+                              ? 'text-[#8ed49a]'
+                              : 'text-[#dce6f2]'
+                        }
+                      >
+                        {gatherStr}
+                      </span>
+                      <span className="text-[9px] text-[#9db4cb]">
+                        W:{zw.windResistancePct}/{zw.requiredWindResistancePct}% · H:{zw.heatRetentionPct}/{zw.requiredHeatRetentionPct}%
+                      </span>
+                    </div>
+
+                    {!zw.mitigated && (
+                      <div className="mt-1 flex items-center justify-between gap-1.5 pt-1 border-t border-[#6e8eb0]/25">
+                        <span className="text-[9px] text-[#cbd5e1] truncate">
+                          {zw.infrastructureHint}
+                        </span>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          data-testid="zone-weather-build-infra-btn"
+                          onClick={(e) => {
+                            e.currentTarget.blur();
+                            onOpenTab('camp');
+                          }}
+                          className="px-1.5 py-0.5 rounded bg-[#d98a2b] hover:bg-[#ea9c3b] text-[#131d2b] text-[9px] font-extrabold uppercase tracking-wider shrink-0 cursor-pointer"
+                        >
+                          Build [U]
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <MinimapOverlay
                 zone={hud.zone}
                 wildlifeBlips={hud.wildlifeBlips}
@@ -2300,17 +2402,68 @@ export function GameHud({
                   </div>
                 </div>
 
+                {/* Zone Weather & Infrastructure Mitigation Summary Banner */}
+                <div
+                  data-testid="camp-weather-infrastructure-banner"
+                  className="rounded-lg bg-[#16283d] border border-[#7be0ff]/45 px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7be0ff] inline-flex items-center gap-1">
+                        <Shield className="w-3.5 h-3.5" />
+                        Zone Weather Infrastructure Shield · {hud.zoneWeatherEffect.name}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                          hud.zoneWeatherEffect.mitigated
+                            ? 'bg-[#163d2b] text-[#8ed49a] border border-[#8ed49a]/50'
+                            : 'bg-[#451218] text-[#fca5a5] border border-[#f87171]/60'
+                        }`}
+                      >
+                        {hud.zoneWeatherEffect.mitigated
+                          ? 'All Penalties Mitigated'
+                          : `${hud.zoneWeatherEffect.severity} Weather Drag Active`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#b8cbe0] mt-0.5">
+                      {hud.zoneWeatherEffect.subtitle}. Construct{' '}
+                      <strong className="text-[#f4efe6]">Windbreak Palisades</strong> to counter
+                      movement drag and{' '}
+                      <strong className="text-[#f4efe6]">Thermal Conduits / Forges</strong> to
+                      prevent sub-zero resource gathering penalties across all 6 zones.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 tabular-nums">
+                    <div className="px-2.5 py-1 rounded bg-[#101c2c] border border-[#7be0ff]/45 text-xs font-bold text-[#9fe8ff]">
+                      Wind Resist: {hud.zoneWeatherEffect.windResistancePct}% (Req{' '}
+                      {hud.zoneWeatherEffect.requiredWindResistancePct}%)
+                    </div>
+                    <div className="px-2.5 py-1 rounded bg-[#101c2c] border border-[#f59e3d]/50 text-xs font-bold text-[#fed7aa]">
+                      Heat Retain: {hud.zoneWeatherEffect.heatRetentionPct}% (Req{' '}
+                      {hud.zoneWeatherEffect.requiredHeatRetentionPct}%)
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {buildingIds.map((id) => {
                     const currentLvl = hud.levels[id] ?? 0;
                     const curSpec = getBuildingSpec(id, currentLvl);
                     const nextSpec = getNextBuildingUpgrade(id, hud.levels);
                     const affordable = nextSpec ? canAfford(hud.resources, nextSpec.cost) : false;
+                    const shownSpec = nextSpec ?? curSpec;
+                    const windBonus = shownSpec.windResistanceBonusPct ?? 0;
+                    const heatBonus = shownSpec.heatRetentionBonusPct ?? 0;
 
                     return (
                       <div
                         key={id}
-                        className="rounded-lg bg-[#1d2e47] border border-[#6e8eb0]/35 p-3 flex flex-col justify-between gap-2"
+                        data-testid={`camp-building-card-${id}`}
+                        className={`rounded-lg bg-[#1d2e47] border p-3 flex flex-col justify-between gap-2 ${
+                          id === 'windbreak' || id === 'thermalConduit'
+                            ? 'border-[#7be0ff]/55'
+                            : 'border-[#6e8eb0]/35'
+                        }`}
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2">
@@ -2321,6 +2474,20 @@ export function GameHud({
                               {nextSpec ? `Lv ${currentLvl} -> ${nextSpec.level}` : 'MAXED'}
                             </span>
                           </div>
+                          {(windBonus > 0 || heatBonus > 0) && (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold tabular-nums">
+                              {windBonus > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-[#122b3d] border border-[#7be0ff]/45 text-[#9fe8ff]">
+                                  +{windBonus}% Wind Resist
+                                </span>
+                              )}
+                              {heatBonus > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-[#2d1e12] border border-[#f59e3d]/45 text-[#fed7aa]">
+                                  +{heatBonus}% Heat Retain
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <p className="text-xs text-[#b8cbe0] mt-1">
                             {nextSpec ? nextSpec.description : curSpec.description}
                           </p>
@@ -2331,6 +2498,7 @@ export function GameHud({
                             <CostTags cost={nextSpec.cost} resources={hud.resources} />
                             <button
                               type="button"
+                              data-testid={`buy-building-${id}`}
                               disabled={!affordable}
                               onClick={() => onBuyBuilding(id)}
                               className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition-colors ${

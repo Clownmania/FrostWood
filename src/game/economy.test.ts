@@ -314,7 +314,10 @@ test('weather particle gusts and screen frost intensity escalate from clear to l
 });
 
 import {
+  THERMAL_CONDUIT_TIERS,
   WEATHER_PHASE_DURATION_SECONDS,
+  WINDBREAK_TIERS,
+  computeZoneWeatherStatusEffect,
   formatWeatherCountdown,
 } from './economy';
 
@@ -331,5 +334,86 @@ test('weather phases last 9 minutes (540s) and countdown formats cleanly as Xm Y
   assert.ok(penUpgrade);
   assert.equal(penUpgrade.level, 1);
 });
+
+test('zone-specific weather status effects scale penalties across L1-L5 and are mitigated by Windbreak & Thermal Conduit infrastructure', () => {
+  assert.equal(WINDBREAK_TIERS.length, 4);
+  assert.equal(THERMAL_CONDUIT_TIERS.length, 4);
+
+  const l1BlizzardUnbuilt = computeZoneWeatherStatusEffect({
+    zone: 'level1',
+    weather: 'blizzard',
+    levels: INITIAL_LEVELS,
+    nearCampfire: false,
+  });
+  assert.equal(l1BlizzardUnbuilt.name, 'Frostwood Whiteout Gale');
+  assert.equal(l1BlizzardUnbuilt.mitigated, false);
+  assert.ok(l1BlizzardUnbuilt.effectiveMoveSpeedMult < 1.0);
+  assert.ok(l1BlizzardUnbuilt.effectiveGatherEfficiencyMult < 1.0);
+
+  const l3BlizzardUnbuilt = computeZoneWeatherStatusEffect({
+    zone: 'level3',
+    weather: 'blizzard',
+    levels: INITIAL_LEVELS,
+    nearCampfire: false,
+  });
+  assert.equal(l3BlizzardUnbuilt.name, 'Rimefang Vortex Howl');
+  assert.ok(l3BlizzardUnbuilt.effectiveMoveSpeedMult < l1BlizzardUnbuilt.effectiveMoveSpeedMult);
+  assert.ok(
+    l3BlizzardUnbuilt.effectiveGatherEfficiencyMult <
+      l1BlizzardUnbuilt.effectiveGatherEfficiencyMult,
+  );
+
+  const l5BlizzardUnbuilt = computeZoneWeatherStatusEffect({
+    zone: 'level5',
+    weather: 'blizzard',
+    levels: INITIAL_LEVELS,
+    nearCampfire: false,
+  });
+  assert.equal(l5BlizzardUnbuilt.name, 'Absolute Zero Cryo-Vortex');
+  assert.equal(l5BlizzardUnbuilt.severity, 'extreme');
+  assert.ok(l5BlizzardUnbuilt.effectiveMoveSpeedMult < l3BlizzardUnbuilt.effectiveMoveSpeedMult);
+  assert.ok(
+    l5BlizzardUnbuilt.effectiveGatherEfficiencyMult <
+      l3BlizzardUnbuilt.effectiveGatherEfficiencyMult,
+  );
+
+  // Building Windbreak Palisade & Thermal Conduit + Forge/Cabin mitigates penalties and grants bonus
+  const fortifiedLevels = {
+    ...INITIAL_LEVELS,
+    cabin: 5,
+    forge: 3,
+    stormShelter: 2,
+    windbreak: 3,
+    thermalConduit: 3,
+  };
+  const l5BlizzardFortified = computeZoneWeatherStatusEffect({
+    zone: 'level5',
+    weather: 'blizzard',
+    levels: fortifiedLevels,
+    nearCampfire: false,
+  });
+  assert.equal(l5BlizzardFortified.mitigated, true);
+  assert.equal(l5BlizzardFortified.windResistancePct, 100);
+  assert.equal(l5BlizzardFortified.heatRetentionPct, 100);
+  assert.ok(l5BlizzardFortified.effectiveMoveSpeedMult >= 1.0);
+  assert.ok(l5BlizzardFortified.effectiveGatherEfficiencyMult >= 1.0);
+
+  // Passive rates reflect Thermal Conduit warmth & harvest bonuses
+  const baseRates = calculatePassiveRates(INITIAL_LEVELS);
+  const fortifiedRates = calculatePassiveRates(fortifiedLevels);
+  assert.ok(fortifiedRates.harvestMultiplier > baseRates.harvestMultiplier);
+  assert.ok(fortifiedRates.warmthRadius > baseRates.warmthRadius);
+
+  // Frostcave City is always a sheltered geothermal sanctuary
+  const cityEffect = computeZoneWeatherStatusEffect({
+    zone: 'city',
+    weather: 'blizzard',
+    levels: INITIAL_LEVELS,
+  });
+  assert.equal(cityEffect.mitigated, true);
+  assert.equal(cityEffect.severity, 'sheltered');
+  assert.ok(cityEffect.effectiveMoveSpeedMult > 1.0);
+});
+
 
 

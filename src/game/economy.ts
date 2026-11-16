@@ -1,4 +1,5 @@
 import type {
+  ActiveCraftBuffs,
   BuildingId,
   BuildingSpec,
   DailyObjective,
@@ -9,6 +10,9 @@ import type {
   ToolUpgradeId,
   UpgradeLevels,
   WeatherKind,
+  ZoneId,
+  ZoneWeatherEffectState,
+  ZoneWeatherSeverity,
 } from './types';
 import { getFestivalBuildingSpec } from './events';
 import { TAMING_PEN_TIERS } from './pets';
@@ -411,6 +415,92 @@ export const FORGE_TIERS: BuildingSpec[] = [
   },
 ];
 
+export const WINDBREAK_TIERS: BuildingSpec[] = [
+  {
+    level: 0,
+    name: 'Unbuilt Windbreak',
+    cost: { wood: 0, pelts: 0, gold: 0 },
+    woodPerSec: 0,
+    goldPerSec: 0,
+    warmthRadius: 0,
+    windResistanceBonusPct: 0,
+    description: 'Construct wind-resistant baffles to counter zone gale movement penalties.',
+  },
+  {
+    level: 1,
+    name: 'Timber Windbreak Palisade',
+    cost: { wood: 24, pelts: 3, stone: 6, gold: 45 },
+    woodPerSec: 0.15,
+    goldPerSec: 0.3,
+    warmthRadius: 8,
+    windResistanceBonusPct: 26,
+    description: 'Angled pine palisade baffles crosswinds (+26% Wind Resistance · counters L1-L2 gale drag).',
+  },
+  {
+    level: 2,
+    name: 'Granite Baffle Wall',
+    cost: { wood: 75, pelts: 12, stone: 24, ice: 4, gold: 160 },
+    woodPerSec: 0.35,
+    goldPerSec: 0.9,
+    warmthRadius: 11,
+    windResistanceBonusPct: 52,
+    description: 'Buttressed granite wind-wall & trail screens (+52% Wind Resistance · counters L3-L4 squalls).',
+  },
+  {
+    level: 3,
+    name: 'Aero-Runed Tempest Barrier',
+    cost: { wood: 190, pelts: 32, stone: 58, ice: 16, gold: 440 },
+    woodPerSec: 0.7,
+    goldPerSec: 2.2,
+    warmthRadius: 15,
+    windResistanceBonusPct: 78,
+    description: 'Runed aerodynamic monoliths channel katabatic gales into tailwinds (+78% Wind Resistance).',
+  },
+];
+
+export const THERMAL_CONDUIT_TIERS: BuildingSpec[] = [
+  {
+    level: 0,
+    name: 'Unbuilt Thermal Conduit',
+    cost: { wood: 0, pelts: 0, gold: 0 },
+    woodPerSec: 0,
+    goldPerSec: 0,
+    warmthRadius: 0,
+    heatRetentionBonusPct: 0,
+    description: 'Build heat-retaining geothermal ducts to prevent freezing harvest penalties.',
+  },
+  {
+    level: 1,
+    name: 'Brazier Heat-Ducts',
+    cost: { wood: 26, pelts: 4, stone: 8, gold: 50 },
+    woodPerSec: 0.15,
+    goldPerSec: 0.4,
+    warmthRadius: 10,
+    heatRetentionBonusPct: 26,
+    description: 'Copper-lined stone ducts retain hearth heat (+26% Heat Retention · +12% harvest yield).',
+  },
+  {
+    level: 2,
+    name: 'Geothermal Steam Conduit',
+    cost: { wood: 80, pelts: 14, stone: 28, ice: 5, gold: 175 },
+    woodPerSec: 0.4,
+    goldPerSec: 1.1,
+    warmthRadius: 14,
+    heatRetentionBonusPct: 52,
+    description: 'Pressurized geothermal pipes warm Waystation Braziers (+52% Heat Retention · +24% harvest yield).',
+  },
+  {
+    level: 3,
+    name: 'Solaris Hearth Core',
+    cost: { wood: 210, pelts: 36, stone: 64, ice: 18, gold: 480 },
+    woodPerSec: 0.85,
+    goldPerSec: 2.6,
+    warmthRadius: 19,
+    heatRetentionBonusPct: 78,
+    description: 'Radiant geothermal core keeps tools & hands nimble in sub-zero vortices (+78% Heat Retention · +36% harvest yield).',
+  },
+];
+
 export const INITIAL_RESOURCES: ResourceCounts = {
   wood: 0,
   pelts: 0,
@@ -431,6 +521,8 @@ export const INITIAL_LEVELS: UpgradeLevels = {
   forge: 0,
   tamingPen: 0,
   stormShelter: 0,
+  windbreak: 0,
+  thermalConduit: 0,
   festivalPavilion: 0,
   iceMonument: 0,
 };
@@ -468,15 +560,25 @@ export function getBuildingSpec(id: BuildingId, level: number): BuildingSpec {
 export function getBuildingTable(id: BuildingId): BuildingSpec[] {
   switch (id) {
     case 'cabin':
-      return CABIN_TIERS;
+      return CABIN_TIERS.map((s) => ({
+        ...s,
+        windResistanceBonusPct: s.level * 3,
+        heatRetentionBonusPct: s.level * 4,
+      }));
     case 'lumberCamp':
-      return LUMBER_CAMP_TIERS;
+      return LUMBER_CAMP_TIERS.map((s) => ({
+        ...s,
+        windResistanceBonusPct: s.level * 3,
+      }));
     case 'sawmill':
       return SAWMILL_TIERS;
     case 'tannery':
       return TANNERY_TIERS;
     case 'forge':
-      return FORGE_TIERS;
+      return FORGE_TIERS.map((s) => ({
+        ...s,
+        heatRetentionBonusPct: s.level * 9,
+      }));
     case 'tamingPen':
       return TAMING_PEN_TIERS;
     case 'stormShelter':
@@ -487,8 +589,13 @@ export function getBuildingTable(id: BuildingId): BuildingSpec[] {
         woodPerSec: 0,
         goldPerSec: 0,
         warmthRadius: 0,
+        windResistanceBonusPct: s.level * 8,
         description: s.description,
       }));
+    case 'windbreak':
+      return WINDBREAK_TIERS;
+    case 'thermalConduit':
+      return THERMAL_CONDUIT_TIERS;
   }
 }
 
@@ -599,6 +706,8 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
   const sawmill = getBuildingSpec('sawmill', levels.sawmill);
   const tannery = getBuildingSpec('tannery', levels.tannery);
   const forge = getBuildingSpec('forge', levels.forge);
+  const windbreak = getBuildingSpec('windbreak', levels.windbreak ?? 0);
+  const thermalConduit = getBuildingSpec('thermalConduit', levels.thermalConduit ?? 0);
   const festivalPavilion = getFestivalBuildingSpec(
     'festivalPavilion',
     levels.festivalPavilion ?? 0,
@@ -614,6 +723,8 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
     lumberCamp.woodPerSec +
     sawmill.woodPerSec +
     forge.woodPerSec +
+    windbreak.woodPerSec +
+    thermalConduit.woodPerSec +
     festivalPavilion.woodPerSec;
   const goldPerSec =
     cabin.goldPerSec +
@@ -621,6 +732,8 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
     sawmill.goldPerSec +
     tannery.goldPerSec +
     forge.goldPerSec +
+    windbreak.goldPerSec +
+    thermalConduit.goldPerSec +
     tamingPen.goldPerSec +
     festivalPavilion.goldPerSec +
     iceMonument.goldPerSec;
@@ -631,11 +744,17 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
   const warmthRadius = Math.max(
     cabin.warmthRadius,
     forge.warmthRadius,
+    windbreak.warmthRadius,
+    thermalConduit.warmthRadius,
     tamingPen.warmthRadius,
     festivalPavilion.warmthRadius,
-    8.5 + levels.cabin * 1.4 + levels.forge * 1.6,
+    8.5 +
+      levels.cabin * 1.4 +
+      levels.forge * 1.6 +
+      (levels.thermalConduit ?? 0) * 2.2,
   );
-  const harvestMultiplier = 1 + levels.forge * 0.15;
+  const harvestMultiplier =
+    1 + levels.forge * 0.15 + (levels.thermalConduit ?? 0) * 0.12;
 
   return {
     woodPerSec,
@@ -643,6 +762,264 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
     workerCount,
     warmthRadius,
     harvestMultiplier,
+  };
+}
+
+interface ZoneWeatherHazardTemplate {
+  names: Record<WeatherKind, string>;
+  subtitle: string;
+  requiredWind: Record<WeatherKind, number>;
+  requiredHeat: Record<WeatherKind, number>;
+  rawMovePenalty: Record<WeatherKind, number>;
+  rawGatherPenalty: Record<WeatherKind, number>;
+}
+
+const ZONE_WEATHER_HAZARDS: Record<ZoneId, ZoneWeatherHazardTemplate> = {
+  city: {
+    names: {
+      clear: 'Geothermal Cavern Draft',
+      light_snow: 'Geothermal Cavern Draft',
+      blizzard: 'Geothermal Cavern Sanctuary',
+    },
+    subtitle: 'Sheltered subterranean magma vents block all surface gales & rime',
+    requiredWind: { clear: 0, light_snow: 0, blizzard: 0 },
+    requiredHeat: { clear: 0, light_snow: 0, blizzard: 0 },
+    rawMovePenalty: { clear: 0, light_snow: 0, blizzard: 0 },
+    rawGatherPenalty: { clear: 0, light_snow: 0, blizzard: 0 },
+  },
+  level1: {
+    names: {
+      clear: 'Valley Frost Draft',
+      light_snow: 'Timberland Hoarfrost',
+      blizzard: 'Frostwood Whiteout Gale',
+    },
+    subtitle: 'Valley crosswinds & hoarfrost slow movement and stiffen axe grip',
+    requiredWind: { clear: 8, light_snow: 18, blizzard: 30 },
+    requiredHeat: { clear: 8, light_snow: 18, blizzard: 30 },
+    rawMovePenalty: { clear: 4, light_snow: 10, blizzard: 18 },
+    rawGatherPenalty: { clear: 4, light_snow: 12, blizzard: 22 },
+  },
+  level2: {
+    names: {
+      clear: 'Highland Ridge Shear',
+      light_snow: 'Highland Katabatic Gale',
+      blizzard: 'Glacial Cyclone Squall',
+    },
+    subtitle: 'Katabatic ridge gales push against stride & numb harvesting hands',
+    requiredWind: { clear: 18, light_snow: 32, blizzard: 48 },
+    requiredHeat: { clear: 18, light_snow: 32, blizzard: 48 },
+    rawMovePenalty: { clear: 9, light_snow: 16, blizzard: 26 },
+    rawGatherPenalty: { clear: 10, light_snow: 18, blizzard: 28 },
+  },
+  level3: {
+    names: {
+      clear: 'Abyssal Trench Draft',
+      light_snow: 'Abyssal Rime-Squall',
+      blizzard: 'Rimefang Vortex Howl',
+    },
+    subtitle: 'Dense trench rime encrusts timber & stone while shear winds drag boots',
+    requiredWind: { clear: 30, light_snow: 48, blizzard: 65 },
+    requiredHeat: { clear: 30, light_snow: 48, blizzard: 65 },
+    rawMovePenalty: { clear: 14, light_snow: 22, blizzard: 34 },
+    rawGatherPenalty: { clear: 16, light_snow: 26, blizzard: 38 },
+  },
+  level4: {
+    names: {
+      clear: 'Caldera Permafrost Shear',
+      light_snow: 'Permafrost Ash-Tempest',
+      blizzard: 'Obsidian Razor Blizzard',
+    },
+    subtitle: 'Volcanic frost-ash scours exposed travelers & freezes iron blades',
+    requiredWind: { clear: 45, light_snow: 64, blizzard: 82 },
+    requiredHeat: { clear: 45, light_snow: 64, blizzard: 82 },
+    rawMovePenalty: { clear: 20, light_snow: 30, blizzard: 42 },
+    rawGatherPenalty: { clear: 22, light_snow: 34, blizzard: 46 },
+  },
+  level5: {
+    names: {
+      clear: 'Cryo-Singularity Downdraft',
+      light_snow: 'Starfall Cryo-Tempest',
+      blizzard: 'Absolute Zero Cryo-Vortex',
+    },
+    subtitle: 'Polar vortex demands high-tier Windbreak & Thermal Conduit infrastructure',
+    requiredWind: { clear: 60, light_snow: 80, blizzard: 95 },
+    requiredHeat: { clear: 60, light_snow: 80, blizzard: 95 },
+    rawMovePenalty: { clear: 26, light_snow: 38, blizzard: 50 },
+    rawGatherPenalty: { clear: 28, light_snow: 42, blizzard: 55 },
+  },
+};
+
+export function computeZoneWeatherStatusEffect(params: {
+  zone: ZoneId;
+  weather: WeatherKind;
+  levels: UpgradeLevels;
+  nearCampfire?: boolean;
+  inStormShelter?: boolean;
+  activeBuffs?: Partial<ActiveCraftBuffs>;
+}): ZoneWeatherEffectState {
+  const { zone, weather, levels } = params;
+  const nearCampfire = Boolean(params.nearCampfire);
+  const inStormShelter = Boolean(params.inStormShelter);
+  const buffs = params.activeBuffs;
+
+  const windbreakSpec = getBuildingSpec('windbreak', levels.windbreak ?? 0);
+  const thermalSpec = getBuildingSpec('thermalConduit', levels.thermalConduit ?? 0);
+  const cabinSpec = getBuildingSpec('cabin', levels.cabin ?? 1);
+  const lumberSpec = getBuildingSpec('lumberCamp', levels.lumberCamp ?? 0);
+  const forgeSpec = getBuildingSpec('forge', levels.forge ?? 0);
+  const shelterSpec = getBuildingSpec('stormShelter', levels.stormShelter ?? 0);
+  const coatBonus = Math.max(0, ((levels.coat ?? 1) - 1) * 3);
+
+  const rawWindResist = inStormShelter
+    ? 100
+    : (windbreakSpec.windResistanceBonusPct ?? 0) +
+      (shelterSpec.windResistanceBonusPct ?? 0) +
+      (cabinSpec.windResistanceBonusPct ?? 0) +
+      (lumberSpec.windResistanceBonusPct ?? 0) +
+      coatBonus +
+      ((buffs?.insulatedBoots ?? 0) > 0 ? 15 : 0);
+
+  const rawHeatRetain = inStormShelter
+    ? 100
+    : (thermalSpec.heatRetentionBonusPct ?? 0) +
+      (forgeSpec.heatRetentionBonusPct ?? 0) +
+      (cabinSpec.heatRetentionBonusPct ?? 0) +
+      coatBonus +
+      (nearCampfire ? 30 : 0) +
+      ((buffs?.fireStarter ?? 0) > 0 ? 18 : 0);
+
+  const windResistancePct = Math.max(0, Math.min(100, Math.round(rawWindResist)));
+  const heatRetentionPct = Math.max(0, Math.min(100, Math.round(rawHeatRetain)));
+
+  const tpl = ZONE_WEATHER_HAZARDS[zone];
+  const name = tpl.names[weather];
+
+  if (zone === 'city') {
+    return {
+      id: `${zone}_${weather}`,
+      name,
+      subtitle: tpl.subtitle,
+      zone,
+      weather,
+      severity: 'sheltered',
+      rawMovePenaltyPct: 0,
+      rawGatherPenaltyPct: 0,
+      windResistancePct,
+      heatRetentionPct,
+      requiredWindResistancePct: 0,
+      requiredHeatRetentionPct: 0,
+      effectiveMoveSpeedMult: 1.05,
+      effectiveGatherEfficiencyMult: 1.05,
+      effectiveChillMult: 0,
+      mitigated: true,
+      infrastructureHint: 'Geothermal cavern sanctuary grants +5% Move & +5% Harvest.',
+    };
+  }
+
+  const requiredWindResistancePct = tpl.requiredWind[weather];
+  const requiredHeatRetentionPct = tpl.requiredHeat[weather];
+  const rawMovePenaltyPct = tpl.rawMovePenalty[weather];
+  const rawGatherPenaltyPct = tpl.rawGatherPenalty[weather];
+
+  let effectiveMoveSpeedMult = 1.0;
+  if (windResistancePct >= requiredWindResistancePct) {
+    const surplusWind = windResistancePct - requiredWindResistancePct;
+    effectiveMoveSpeedMult =
+      Math.round((1.0 + Math.min(0.08, surplusWind * 0.0015)) * 1000) / 1000;
+  } else {
+    const unmitigatedWindRatio =
+      (requiredWindResistancePct - windResistancePct) /
+      Math.max(1, requiredWindResistancePct);
+    const netMovePenaltyPct = Math.round(rawMovePenaltyPct * unmitigatedWindRatio);
+    effectiveMoveSpeedMult = Math.max(
+      0.45,
+      Math.round((1 - netMovePenaltyPct / 100) * 1000) / 1000,
+    );
+  }
+
+  let effectiveGatherEfficiencyMult = 1.0;
+  if (heatRetentionPct >= requiredHeatRetentionPct) {
+    const surplusHeat = heatRetentionPct - requiredHeatRetentionPct;
+    effectiveGatherEfficiencyMult =
+      Math.round((1.0 + Math.min(0.15, surplusHeat * 0.0025)) * 1000) / 1000;
+  } else {
+    const unmitigatedHeatRatio =
+      (requiredHeatRetentionPct - heatRetentionPct) /
+      Math.max(1, requiredHeatRetentionPct);
+    const netGatherPenaltyPct = Math.round(rawGatherPenaltyPct * unmitigatedHeatRatio);
+    effectiveGatherEfficiencyMult = Math.max(
+      0.4,
+      Math.round((1 - netGatherPenaltyPct / 100) * 1000) / 1000,
+    );
+  }
+
+  const windCoverage =
+    requiredWindResistancePct > 0
+      ? Math.min(1.4, windResistancePct / requiredWindResistancePct)
+      : 1;
+  const heatCoverage =
+    requiredHeatRetentionPct > 0
+      ? Math.min(1.4, heatRetentionPct / requiredHeatRetentionPct)
+      : 1;
+  const avgCoverage = (windCoverage + heatCoverage) * 0.5;
+  const effectiveChillMult = inStormShelter
+    ? 0
+    : Math.max(
+        0.55,
+        Math.min(1.35, Math.round((1.28 - avgCoverage * 0.52) * 100) / 100),
+      );
+
+  const mitigated =
+    windResistancePct >= requiredWindResistancePct &&
+    heatRetentionPct >= requiredHeatRetentionPct;
+
+  const worstMoveDrop = Math.max(0, Math.round((1 - effectiveMoveSpeedMult) * 100));
+  const worstGatherDrop = Math.max(
+    0,
+    Math.round((1 - effectiveGatherEfficiencyMult) * 100),
+  );
+  const maxDrop = Math.max(worstMoveDrop, worstGatherDrop);
+
+  let severity: ZoneWeatherSeverity = 'sheltered';
+  if (!mitigated) {
+    if (maxDrop >= 30) severity = 'extreme';
+    else if (maxDrop >= 18) severity = 'severe';
+    else if (maxDrop >= 9) severity = 'moderate';
+    else severity = 'mild';
+  }
+
+  let infrastructureHint =
+    'Windbreak & Thermal Conduit infrastructure fully counter zone weather!';
+  if (!mitigated) {
+    const needWind = windResistancePct < requiredWindResistancePct;
+    const needHeat = heatRetentionPct < requiredHeatRetentionPct;
+    if (needWind && needHeat) {
+      infrastructureHint = `Build Windbreak Palisade (${windResistancePct}/${requiredWindResistancePct}% Wind) & Thermal Conduit (${heatRetentionPct}/${requiredHeatRetentionPct}% Heat) in Base [U]`;
+    } else if (needWind) {
+      infrastructureHint = `Upgrade Windbreak Palisade (${windResistancePct}/${requiredWindResistancePct}% Wind Resist) in Base [U] to restore Move Speed`;
+    } else {
+      infrastructureHint = `Upgrade Thermal Conduit or Forge (${heatRetentionPct}/${requiredHeatRetentionPct}% Heat Retain) in Base [U] to restore Harvest Yield`;
+    }
+  }
+
+  return {
+    id: `${zone}_${weather}`,
+    name,
+    subtitle: tpl.subtitle,
+    zone,
+    weather,
+    severity,
+    rawMovePenaltyPct,
+    rawGatherPenaltyPct,
+    windResistancePct,
+    heatRetentionPct,
+    requiredWindResistancePct,
+    requiredHeatRetentionPct,
+    effectiveMoveSpeedMult,
+    effectiveGatherEfficiencyMult,
+    effectiveChillMult,
+    mitigated,
+    infrastructureHint,
   };
 }
 

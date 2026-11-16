@@ -9424,4 +9424,150 @@ export function createCavernWardenModel(palette: MaterialPalette): ZoneBossModel
   };
 }
 
+export function createWindbreakPalisadeMesh(
+  level: number,
+  palette: MaterialPalette,
+): THREE.Group {
+  const group = new THREE.Group();
+  const safeLevel = Math.max(1, Math.min(3, level));
+
+  // Ground foundation pad
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.1, 2.35, 0.22, 12),
+    palette.stoneMat,
+  );
+  pad.position.y = 0.11;
+  pad.receiveShadow = true;
+  group.add(pad);
+
+  // Curved arc of angled wind-baffle timbers / granite piers / cryo-runed pylons
+  const postCount = safeLevel === 1 ? 5 : safeLevel === 2 ? 7 : 9;
+  const arcSpan = 2.1;
+  for (let i = 0; i < postCount; i++) {
+    const t = postCount > 1 ? i / (postCount - 1) - 0.5 : 0;
+    const angle = t * arcSpan;
+    const radius = 1.45;
+    const px = Math.sin(angle) * radius;
+    const pz = -Math.cos(angle) * radius * 0.65;
+    const height = (1.65 + (1 - Math.abs(t)) * 0.55) * (0.9 + safeLevel * 0.14);
+
+    const postMat =
+      safeLevel >= 3
+        ? palette.frostSteelMat
+        : safeLevel === 2
+          ? palette.stoneMat
+          : palette.barkMat;
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.19, height, 8),
+      postMat,
+    );
+    post.position.set(px, height * 0.5 + 0.15, pz);
+    post.rotation.x = 0.22;
+    post.rotation.z = -t * 0.18;
+    post.castShadow = true;
+    post.receiveShadow = true;
+    group.add(post);
+
+    if (safeLevel >= 2) {
+      const buttress = new THREE.Mesh(
+        new THREE.BoxGeometry(0.24, height * 0.65, 0.42),
+        palette.rockMat,
+      );
+      buttress.position.set(px * 0.85, height * 0.32 + 0.15, pz + 0.25);
+      buttress.castShadow = true;
+      group.add(buttress);
+    }
+
+    if (safeLevel >= 3 && i % 2 === 0) {
+      const vane = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.22, 0),
+        palette.auroraCrystalMat,
+      );
+      vane.position.set(px, height + 0.32, pz);
+      group.add(vane);
+    }
+  }
+
+  // Crossbeam wind-deflector slats
+  const crossBar = new THREE.Mesh(
+    new THREE.BoxGeometry(2.6, 0.22, 0.26),
+    safeLevel >= 2 ? palette.ironMat : palette.timberMat,
+  );
+  crossBar.position.set(0, 1.15, -0.55);
+  crossBar.castShadow = true;
+  group.add(crossBar);
+
+  return group;
+}
+
+export function createThermalConduitMesh(
+  level: number,
+  palette: MaterialPalette,
+): THREE.Group {
+  const group = new THREE.Group();
+  const safeLevel = Math.max(1, Math.min(3, level));
+
+  // Stepped stone geothermal cistern base
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.75, 2.05, 0.38, 12),
+    palette.stoneMat,
+  );
+  base.position.y = 0.19;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  group.add(base);
+
+  // Central boiler / geothermal hearth core
+  const coreHeight = 1.45 + safeLevel * 0.32;
+  const boiler = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.68, 0.82, coreHeight, 12),
+    safeLevel >= 2 ? palette.ironMat : palette.rockMat,
+  );
+  boiler.position.y = 0.38 + coreHeight * 0.5;
+  boiler.castShadow = true;
+  group.add(boiler);
+
+  // Glowing ember / solaris thermal ring
+  const glowBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.74, 0.74, 0.34, 12),
+    palette.emberMat,
+  );
+  glowBand.position.y = 0.38 + coreHeight * 0.48;
+  group.add(glowBand);
+
+  // Radial heat-retaining copper/iron steam ducts
+  const ductCount = safeLevel === 1 ? 3 : safeLevel === 2 ? 4 : 6;
+  for (let i = 0; i < ductCount; i++) {
+    const a = (i / ductCount) * Math.PI * 2;
+    const pipe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.16, 1.35, 8),
+      safeLevel >= 3 ? palette.goldMat : palette.ironMat,
+    );
+    pipe.position.set(Math.cos(a) * 1.05, 0.65, Math.sin(a) * 1.05);
+    pipe.rotation.z = Math.cos(a) * 0.55;
+    pipe.rotation.x = -Math.sin(a) * 0.55;
+    pipe.castShadow = true;
+    group.add(pipe);
+
+    const brazierBowl = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.18, 0.26, 8),
+      palette.emberMat,
+    );
+    brazierBowl.position.set(Math.cos(a) * 1.42, 0.42, Math.sin(a) * 1.42);
+    group.add(brazierBowl);
+  }
+
+  if (safeLevel >= 3) {
+    const crown = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.42, 0),
+      palette.emberMat,
+    );
+    crown.position.y = 0.45 + coreHeight + 0.38;
+    group.add(crown);
+  }
+
+  return group;
+}
+
+
 

@@ -13,6 +13,7 @@ import {
   INITIAL_RESOURCES,
   INITIAL_STATS,
   WEATHER_PHASE_DURATION_SECONDS,
+  computeZoneWeatherStatusEffect,
   createDailyObjective,
 } from './game/economy';
 import { createInitialSeasonalEvent } from './game/events';
@@ -117,6 +118,14 @@ const DEFAULT_HUD: HudSnapshot = {
   weather: 'clear',
   weatherTimeLeft: WEATHER_PHASE_DURATION_SECONDS,
   frostIntensity: 0,
+  zoneWeatherEffect: computeZoneWeatherStatusEffect({
+    zone: 'level1',
+    weather: 'clear',
+    levels: INITIAL_LEVELS,
+    nearCampfire: true,
+    inStormShelter: false,
+    activeBuffs: INITIAL_BUFFS,
+  }),
   dayNight: createInitialDayNightState(),
   calendar: buildCalendarState(1),
   dailyObjective: createDailyObjective(1),
