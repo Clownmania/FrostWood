@@ -44,16 +44,22 @@ const RARITY_RANK: Record<ItemRarity, number> = {
   mythic: 4,
 };
 
-export const ZONE_LOOT_TIER: Record<ZoneId, 1 | 2 | 3> = {
+export const ZONE_LOOT_TIER: Record<ZoneId, 1 | 2 | 3 | 4 | 5 | 6> = {
   level1: 1,
   level2: 2,
   city: 3,
+  level3: 4,
+  level4: 5,
+  level5: 6,
 };
 
 export const ZONE_LOOT_MULTIPLIER: Record<ZoneId, number> = {
   level1: 1.0,
   level2: 1.35,
   city: 1.55,
+  level3: 1.85,
+  level4: 2.35,
+  level5: 3.1,
 };
 
 export const LOOT_ITEM_POOL: readonly LootItemPoolEntry[] = [
@@ -125,7 +131,7 @@ export function computeEffectiveLootGearLevel(context?: LootScalingContext): num
 
 export interface PlayerLootProgression {
   zone: ZoneId;
-  zoneTier: 1 | 2 | 3;
+  zoneTier: 1 | 2 | 3 | 4 | 5 | 6;
   effectiveGearLevel: number;
   gearProgress: number; // 0..1
   zoneProgress: number; // 0..1
@@ -142,7 +148,7 @@ export function computePlayerLootProgression(
   const effectiveGearLevel = computeEffectiveLootGearLevel(context);
 
   const gearProgress = clamp((effectiveGearLevel - 1) / 4, 0, 1);
-  const zoneProgress = (zoneTier - 1) / 2;
+  const zoneProgress = clamp((zoneTier - 1) / 2, 0, 1);
   const progressionIndex = Number(
     clamp(gearProgress * 0.62 + zoneProgress * 0.38, 0, 1).toFixed(3),
   );
@@ -179,8 +185,30 @@ export function computeSecretChestRarityWeights(
   gearLevel = 1,
 ): Record<SecretChestRarity, number> {
   const gearProgress = clamp((gearLevel - 1) / 4, 0, 1);
-  const zoneAuroraBoost = zone === 'level2' ? 0.06 : zone === 'city' ? 0.1 : 0;
-  const zoneRelicBoost = zone === 'level2' ? 0.08 : zone === 'city' ? 0.12 : 0;
+  const zoneAuroraBoost =
+    zone === 'level2'
+      ? 0.06
+      : zone === 'city'
+        ? 0.1
+        : zone === 'level3'
+          ? 0.14
+          : zone === 'level4'
+            ? 0.2
+            : zone === 'level5'
+              ? 0.26
+              : 0;
+  const zoneRelicBoost =
+    zone === 'level2'
+      ? 0.08
+      : zone === 'city'
+        ? 0.12
+        : zone === 'level3'
+          ? 0.14
+          : zone === 'level4'
+            ? 0.16
+            : zone === 'level5'
+              ? 0.18
+              : 0;
 
   const gearAuroraBoost = gearProgress * 0.22;
   const gearRelicBoost = gearProgress * 0.2;

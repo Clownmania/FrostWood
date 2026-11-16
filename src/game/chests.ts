@@ -23,12 +23,12 @@ import {
 } from './zones';
 
 export const SECRET_CHEST_INTERACT_RADIUS = 3.6;
-export const MAX_ACTIVE_SECRET_CHESTS = 2;
+export const MAX_ACTIVE_SECRET_CHESTS = 3;
 export const SECRET_CHEST_SPAWN_INTERVAL = 12.0;
 /** Small random chance (9%) per spawn tick for a Secret Loot Box to appear. */
 export const SECRET_CHEST_SPAWN_CHANCE = 0.09;
-export const SECRET_CHEST_MIN_HEARTH_DIST = 26;
-export const SECRET_CHEST_MIN_PLAYER_DIST = 18;
+export const SECRET_CHEST_MIN_HEARTH_DIST = 34;
+export const SECRET_CHEST_MIN_PLAYER_DIST = 22;
 
 export interface SecretChestSpec {
   rarity: SecretChestRarity;
@@ -149,12 +149,16 @@ export function pickSecretChestSpawnPoint(params: {
     const z = zSpec.centerZ + Math.sin(angle) * r;
     const dPlayer = Math.hypot(x - playerX, z - playerZ);
     const dPortal = Math.hypot(x - zSpec.portalX, z - zSpec.portalZ);
+    const dForwardPortal =
+      zSpec.forwardPortalX !== undefined && zSpec.forwardPortalZ !== undefined
+        ? Math.hypot(x - zSpec.forwardPortalX, z - zSpec.forwardPortalZ)
+        : 99;
     const dCityPortal =
       zone === 'level1'
         ? Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z)
         : 99;
 
-    if (dPortal < 9 || dCityPortal < 9) continue;
+    if (dPortal < 10 || dForwardPortal < 10 || dCityPortal < 10) continue;
 
     let blocked = false;
     for (let i = 0; i < obstacles.length; i++) {
@@ -290,7 +294,7 @@ export function collectMinimapChestBlips<
   zone: ZoneId,
   sightActive: boolean,
 ): MinimapChestBlip[] {
-  const maxRevealDist = sightActive ? 120 : 42;
+  const maxRevealDist = sightActive ? 175 : 46;
   const blips: MinimapChestBlip[] = [];
   for (const ch of chests) {
     if (ch.opened || ch.zone !== zone) continue;

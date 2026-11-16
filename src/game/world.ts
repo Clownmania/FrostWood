@@ -52,49 +52,85 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+function wildernessZoneHeight(
+  zone: 'level2' | 'level3' | 'level4' | 'level5',
+  x: number,
+  z: number,
+): number {
+  const spec = ZONE_SPECS[zone];
+  const lx = x - spec.centerX;
+  const lz = z - spec.centerZ;
+  const dist = Math.hypot(lx, lz);
+
+  const hearthDist = Math.hypot(x - spec.hearthX, z - spec.hearthZ);
+  const portalDist = Math.hypot(x - spec.portalX, z - spec.portalZ);
+  const fwdDist =
+    spec.forwardPortalX !== undefined && spec.forwardPortalZ !== undefined
+      ? Math.hypot(x - spec.forwardPortalX, z - spec.forwardPortalZ)
+      : 999;
+
+  const minPadDist = Math.min(hearthDist, portalDist, fwdDist);
+  const padBlend = smoothstep(6.5, 15.5, minPadDist);
+
+  const hillAmp =
+    zone === 'level5'
+      ? 1.95
+      : zone === 'level4'
+        ? 1.75
+        : zone === 'level3'
+          ? 1.6
+          : 1.45;
+  const hills =
+    (Math.sin(lx * 0.075) * Math.cos(lz * 0.07) * hillAmp +
+      Math.sin((lx - lz) * 0.042) * 0.85) *
+    padBlend;
+
+  const boss = getZoneBossSpec(zone);
+  const distBoss = Math.hypot(x - boss.arenaX, z - boss.arenaZ);
+  const bossBlend = smoothstep(14.8, 25.0, distBoss);
+  const leveled = THREE.MathUtils.lerp(0.35, hills, bossBlend);
+
+  if (dist > spec.radius) {
+    const rim = dist - spec.radius;
+    return leveled + Math.pow(rim * 0.42, 1.55);
+  }
+  return leveled;
+}
+
 export function groundHeightAt(x: number, z: number): number {
-  // Level 2: Glacial Highlands on the North side (centered at z = LEVEL2_CENTER_Z)
-  if (z <= -135) {
-    const spec2 = ZONE_SPECS.level2;
-    const lx = x - spec2.centerX;
-    const lz = z - spec2.centerZ;
-    const dist = Math.hypot(lx, lz);
-
-    // Flat landing plaza connecting Return Portal (z = -178) & Waystation Brazier (z = -188)
-    const clampedZ = Math.max(spec2.hearthZ - 2, Math.min(spec2.portalZ + 2, z));
-    const plazaDist = Math.hypot(x, z - clampedZ);
-    const plazaBlend = smoothstep(6.2, 14.5, plazaDist);
-
-    const highlandHills =
-      (Math.sin(x * 0.08) * Math.cos(z * 0.075) * 1.45 +
-        Math.sin((x - z) * 0.045) * 0.75) *
-      plazaBlend;
-
-    // Smoothly level the Zone 2 Boss Arena plateau around Veyra's Frost Citadel
-    const boss2 = getZoneBossSpec('level2');
-    const distBoss2 = Math.hypot(x - boss2.arenaX, z - boss2.arenaZ);
-    const boss2Blend = smoothstep(14.8, 24.5, distBoss2);
-    const leveledHighlands = THREE.MathUtils.lerp(0.35, highlandHills, boss2Blend);
-
-    if (dist > LEVEL2_RADIUS) {
-      const rim = dist - LEVEL2_RADIUS;
-      return leveledHighlands + Math.pow(rim * 0.42, 1.55);
+  // North continent row (z <= -185): Level 3 (West), Level 2 (Center), Level 5 (East)
+  if (z <= -185) {
+    if (x < -160) {
+      return wildernessZoneHeight('level3', x, z);
     }
-    return leveledHighlands;
+    if (x > 160) {
+      return wildernessZoneHeight('level5', x, z);
+    }
+    return wildernessZoneHeight('level2', x, z);
   }
 
-  // Zone 3: Frostcave City on the East side (centered at x = CITY_CENTER_X, z = 0)
-  if (x >= 115) {
+  // South continent row (z > -185): Level 4 (West), Level 1 (Center), Frostcave City (East)
+  if (x < -168) {
+    return wildernessZoneHeight('level4', x, z);
+  }
+
+  if (x >= 175) {
     const lx = x - CITY_CENTER_X;
     const lz = z - CITY_CENTER_Z;
     const dist = Math.hypot(lx, lz);
-    // Flat subterranean cavern plaza out to radius 42
-    if (dist <= 42) {
+    // Flat subterranean cavern plaza out to radius 56
+    if (dist <= 56) {
       return 0;
     }
-    const outerBlend = smoothstep(42, CITY_RADIUS, dist);
-    const cavernFloor =
-      (Math.sin(x * 0.09) * Math.cos(z * 0.09) * 0.65 + 0.35) * outerBlend;
+    const outerBlend = smoothstep(56, CITY_RADIUS, dist);
+    let cavernFloor =
+      (Math.sin(lx * 0.08) * Math.cos(lz * 0.08) * 0.65 + 0.35) * outerBlend;
+
+    const bossCity = getZoneBossSpec('city');
+    const distBossCity = Math.hypot(x - bossCity.arenaX, z - bossCity.arenaZ);
+    const bossCityBlend = smoothstep(13.5, 22.0, distBossCity);
+    cavernFloor = THREE.MathUtils.lerp(0.2, cavernFloor, bossCityBlend);
+
     if (dist > CITY_RADIUS) {
       const rim = dist - CITY_RADIUS;
       return cavernFloor + Math.pow(rim * 0.46, 1.58);
@@ -111,24 +147,24 @@ export function groundHeightAt(x: number, z: number): number {
 
   const blend = Math.min(1, (dist - CLEARING_RADIUS) / 14);
   const gentleHills =
-    (Math.sin(x * 0.09) * Math.cos(z * 0.08) * 1.15 +
-      Math.sin((x + z) * 0.05) * 0.65) *
+    (Math.sin(x * 0.08) * Math.cos(z * 0.075) * 1.2 +
+      Math.sin((x + z) * 0.045) * 0.68) *
     blend;
 
-  // Smoothly level the Northgate Portal clearing at (0, -68)
+  // Smoothly level the Northgate Portal clearing at (0, -96)
   const distPortal = Math.hypot(x - spec1.portalX, z - spec1.portalZ);
-  const portalBlend = smoothstep(5.5, 13.5, distPortal);
+  const portalBlend = smoothstep(5.5, 14.5, distPortal);
   let leveledHills = THREE.MathUtils.lerp(0.65, gentleHills, portalBlend);
 
-  // Smoothly level the East Frostcave City Gate clearing at (68, 0)
+  // Smoothly level the East Frostcave City Gate clearing at (96, 0)
   const distCityGate = Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z);
-  const cityGateBlend = smoothstep(5.5, 13.5, distCityGate);
+  const cityGateBlend = smoothstep(5.5, 14.5, distCityGate);
   leveledHills = THREE.MathUtils.lerp(0.45, leveledHills, cityGateBlend);
 
   // Smoothly level the Zone 1 Boss Arena plateau around Elderwood Hollow
   const boss1 = getZoneBossSpec('level1');
   const distBoss1 = Math.hypot(x - boss1.arenaX, z - boss1.arenaZ);
-  const boss1Blend = smoothstep(14.8, 24.5, distBoss1);
+  const boss1Blend = smoothstep(14.8, 25.0, distBoss1);
   leveledHills = THREE.MathUtils.lerp(0.4, leveledHills, boss1Blend);
 
   if (dist > LEVEL1_RADIUS) {
@@ -167,12 +203,12 @@ export function createZoneTerrain(
 ): THREE.Group {
   const worldGroup = new THREE.Group();
   const spec = ZONE_SPECS[zone];
-  const isLevel2 = zone === 'level2';
   const isCity = zone === 'city';
+  const isHighWilderness = zone !== 'level1' && !isCity;
 
   // Continuous terrain mesh extending well beyond playable radius into horizon fog
-  const terrainSize = isCity ? 240 : isLevel2 ? 290 : 320;
-  const segments = isCity ? 108 : isLevel2 ? 128 : 136;
+  const terrainSize = isCity ? 260 : 380;
+  const segments = isCity ? 108 : 136;
   const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, segments, segments);
   terrainGeo.rotateX(-Math.PI / 2);
   terrainGeo.translate(spec.centerX, 0, spec.centerZ);
@@ -185,14 +221,27 @@ export function createZoneTerrain(
   }
   terrainGeo.computeVertexNormals();
 
+  const terrainColorHex =
+    zone === 'city'
+      ? 0xd8e8f8
+      : zone === 'level5'
+        ? 0xf3e8ff
+        : zone === 'level4'
+          ? 0xfde2e7
+          : zone === 'level3'
+            ? 0xdbeafe
+            : zone === 'level2'
+              ? 0xe5f2ff
+              : 0xffffff;
+
   const terrainMat = new THREE.MeshStandardMaterial({
-    color: isCity ? 0xd8e8f8 : isLevel2 ? 0xe5f2ff : 0xffffff,
+    color: terrainColorHex,
     map: textures.snowMap,
     bumpMap: textures.snowBump,
-    bumpScale: isLevel2 || isCity ? 0.11 : 0.09,
+    bumpScale: isHighWilderness || isCity ? 0.11 : 0.09,
     roughnessMap: textures.snowRoughness,
-    roughness: isCity ? 0.76 : isLevel2 ? 0.78 : 0.84,
-    metalness: isCity ? 0.08 : isLevel2 ? 0.05 : 0.02,
+    roughness: isCity ? 0.76 : isHighWilderness ? 0.78 : 0.84,
+    metalness: isCity ? 0.08 : isHighWilderness ? 0.06 : 0.02,
   });
 
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
@@ -201,7 +250,7 @@ export function createZoneTerrain(
 
   // Packed cobble-and-frost footpath trails
   const trailMat = new THREE.MeshStandardMaterial({
-    color: isCity ? 0xd9d2c5 : isLevel2 ? 0xd9ebff : 0xffffff,
+    color: isCity ? 0xd9d2c5 : isHighWilderness ? 0xd9ebff : 0xffffff,
     map: textures.trailMap,
     bumpMap: textures.trailBump,
     bumpScale: 0.06,
@@ -256,11 +305,12 @@ export function createZoneTerrain(
       worldGroup.userData.windTargets = baseProps.userData.windTargets;
     }
 
-    // Northern Expedition Trail leading cleanly from Hearth Circle to Northgate Portal at (0, -68)
-    const roadSegs = 24;
+    // Northern Expedition Trail leading cleanly from Hearth Circle to Northgate Portal at (0, -96)
+    const northDist = Math.abs(spec.portalZ) - 3.5;
+    const roadSegs = 28;
     for (let s = 0; s < roadSegs; s++) {
-      const z0 = -3.0 - (s / roadSegs) * 64.5;
-      const z1 = -3.0 - ((s + 1) / roadSegs) * 64.5;
+      const z0 = -3.0 - (s / roadSegs) * northDist;
+      const z1 = -3.0 - ((s + 1) / roadSegs) * northDist;
       const midZ = (z0 + z1) * 0.5;
       const y0 = groundHeightAt(0, z0);
       const y1 = groundHeightAt(0, z1);
@@ -290,7 +340,7 @@ export function createZoneTerrain(
       roughness: 0.25,
       metalness: 0.3,
     });
-    for (const markerZ of [-22, -36, -50, -60]) {
+    for (const markerZ of [-22, -38, -54, -70, -84]) {
       for (const side of [-1.75, 1.75]) {
         const my = groundHeightAt(side, markerZ);
         const post = new THREE.Mesh(
@@ -308,11 +358,12 @@ export function createZoneTerrain(
       }
     }
 
-    // Eastern Cobblestone Trade Road leading cleanly from Hearth Circle to Frostcave City Gate at (68, 0)
-    const eastRoadSegs = 22;
+    // Eastern Cobblestone Trade Road leading cleanly from Hearth Circle to Frostcave City Gate at (96, 0)
+    const eastDist = LEVEL1_CITY_PORTAL_X - 3.5;
+    const eastRoadSegs = 26;
     for (let s = 0; s < eastRoadSegs; s++) {
-      const x0 = 3.0 + (s / eastRoadSegs) * 64.4;
-      const x1 = 3.0 + ((s + 1) / eastRoadSegs) * 64.4;
+      const x0 = 3.0 + (s / eastRoadSegs) * eastDist;
+      const x1 = 3.0 + ((s + 1) / eastRoadSegs) * eastDist;
       const midX = (x0 + x1) * 0.5;
       const y0 = groundHeightAt(x0, 0);
       const y1 = groundHeightAt(x1, 0);
@@ -341,7 +392,7 @@ export function createZoneTerrain(
       roughness: 0.25,
       metalness: 0.3,
     });
-    for (const markerX of [22, 36, 50, 60]) {
+    for (const markerX of [22, 38, 54, 70, 84]) {
       for (const sideZ of [-1.85, 1.85]) {
         const my = groundHeightAt(markerX, sideZ);
         const post = new THREE.Mesh(
@@ -358,29 +409,33 @@ export function createZoneTerrain(
         worldGroup.add(post, lantern);
       }
     }
-  } else if (zone === 'level2') {
-    // Level 2 Landing Plaza connecting Return Portal (-178) & Waystation Brazier (-188)
-    const plazaGeo = new THREE.PlaneGeometry(3.2, 16);
-    plazaGeo.rotateX(-Math.PI / 2);
-    const plaza = new THREE.Mesh(plazaGeo, trailMat);
-    plaza.position.set(0, 0.032, (spec.portalZ + spec.hearthZ) * 0.5);
-    plaza.receiveShadow = true;
-    worldGroup.add(plaza);
-
-    const brazierCircle = new THREE.Mesh(new THREE.CircleGeometry(4.2, 28), trailMat);
+  } else if (isHighWilderness) {
+    // Waystation Brazier Circle & Return/Forward Portal Stone Aprons for Levels 2, 3, 4, 5
+    const hy = groundHeightAt(spec.hearthX, spec.hearthZ);
+    const brazierCircle = new THREE.Mesh(new THREE.CircleGeometry(4.6, 28), trailMat);
     brazierCircle.rotation.x = -Math.PI / 2;
-    brazierCircle.position.set(spec.hearthX, 0.034, spec.hearthZ);
+    brazierCircle.position.set(spec.hearthX, hy + 0.035, spec.hearthZ);
     brazierCircle.receiveShadow = true;
     worldGroup.add(brazierCircle);
 
-    const portalPad = new THREE.Mesh(new THREE.CircleGeometry(5.0, 28), trailMat);
+    const py = groundHeightAt(spec.portalX, spec.portalZ);
+    const portalPad = new THREE.Mesh(new THREE.CircleGeometry(5.2, 28), trailMat);
     portalPad.rotation.x = -Math.PI / 2;
-    portalPad.position.set(spec.portalX, 0.034, spec.portalZ);
+    portalPad.position.set(spec.portalX, py + 0.035, spec.portalZ);
     portalPad.receiveShadow = true;
     worldGroup.add(portalPad);
+
+    if (spec.forwardPortalX !== undefined && spec.forwardPortalZ !== undefined) {
+      const fy = groundHeightAt(spec.forwardPortalX, spec.forwardPortalZ);
+      const fwdPad = new THREE.Mesh(new THREE.CircleGeometry(5.2, 28), trailMat);
+      fwdPad.rotation.x = -Math.PI / 2;
+      fwdPad.position.set(spec.forwardPortalX, fy + 0.035, spec.forwardPortalZ);
+      fwdPad.receiveShadow = true;
+      worldGroup.add(fwdPad);
+    }
   } else {
-    // Zone 3: Subterranean Frostcave City Plaza, Cobblestone Avenues, Buildings & Glacial Cavern Vault
-    const plazaCircle = new THREE.Mesh(new THREE.CircleGeometry(21.5, 48), trailMat);
+    // Subterranean Frostcave City Plaza, Cobblestone Avenues, Buildings & Glacial Cavern Vault
+    const plazaCircle = new THREE.Mesh(new THREE.CircleGeometry(26.5, 48), trailMat);
     plazaCircle.rotation.x = -Math.PI / 2;
     plazaCircle.position.set(CITY_CENTER_X, 0.03, CITY_CENTER_Z);
     plazaCircle.receiveShadow = true;
@@ -394,21 +449,21 @@ export function createZoneTerrain(
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
-    const innerRing = new THREE.Mesh(new THREE.RingGeometry(8.5, 9.2, 40), innerRingMat);
+    const innerRing = new THREE.Mesh(new THREE.RingGeometry(10.5, 11.3, 40), innerRingMat);
     innerRing.rotation.x = -Math.PI / 2;
     innerRing.position.set(CITY_CENTER_X, 0.04, CITY_CENTER_Z);
     worldGroup.add(innerRing);
 
-    // West-East Grand Cavern Avenue (from West Portal at x=140 through Plaza to East Obsidian Trial Arena at x=232)
-    const ewAveGeo = new THREE.PlaneGeometry(98, 4.4);
+    // West-East Grand Cavern Avenue (from West Portal at x=206 through Plaza to East Obsidian Trial Arena at x=346)
+    const ewAveGeo = new THREE.PlaneGeometry(156, 4.6);
     ewAveGeo.rotateX(-Math.PI / 2);
     const ewAve = new THREE.Mesh(ewAveGeo, trailMat);
-    ewAve.position.set(CITY_CENTER_X + 2, 0.028, CITY_CENTER_Z);
+    ewAve.position.set(CITY_CENTER_X - 4, 0.028, CITY_CENTER_Z);
     ewAve.receiveShadow = true;
     worldGroup.add(ewAve);
 
     // North-South Cross Avenue
-    const nsAveGeo = new THREE.PlaneGeometry(4.2, 54);
+    const nsAveGeo = new THREE.PlaneGeometry(4.4, 72);
     nsAveGeo.rotateX(-Math.PI / 2);
     const nsAve = new THREE.Mesh(nsAveGeo, trailMat);
     nsAve.position.set(CITY_CENTER_X, 0.028, CITY_CENTER_Z);
@@ -428,42 +483,42 @@ export function createZoneTerrain(
 
     // Grand Frostcave City Hall on the North side of the square facing South
     const cityHall = createCityHallMesh(palette);
-    cityHall.position.set(CITY_CENTER_X, 0, CITY_CENTER_Z - 24.5);
+    cityHall.position.set(CITY_CENTER_X, 0, CITY_CENTER_Z - 29.5);
     cityHall.rotation.y = 0;
     worldGroup.add(cityHall);
 
     // Frosthearth Tavern on the Northwest corner facing South-East
     const tavern = createCityTavernMesh(palette);
-    tavern.position.set(CITY_CENTER_X - 23.5, 0, CITY_CENTER_Z - 19.5);
+    tavern.position.set(CITY_CENTER_X - 28.5, 0, CITY_CENTER_Z - 23.5);
     tavern.rotation.y = 0.42;
     worldGroup.add(tavern);
 
     // Royal Armory & Guildhouses framing the Northeast, Southwest, and Southeast corners
     const guildNE = createCityGuildhouseMesh(palette, palette.coatBlueMat);
-    guildNE.position.set(CITY_CENTER_X + 23.5, 0, CITY_CENTER_Z - 19.5);
+    guildNE.position.set(CITY_CENTER_X + 28.5, 0, CITY_CENTER_Z - 23.5);
     guildNE.rotation.y = -0.42;
     worldGroup.add(guildNE);
 
     const guildSW = createCityGuildhouseMesh(palette, palette.coatGreenMat);
-    guildSW.position.set(CITY_CENTER_X - 22.5, 0, CITY_CENTER_Z + 20.5);
+    guildSW.position.set(CITY_CENTER_X - 27.5, 0, CITY_CENTER_Z + 24.5);
     guildSW.rotation.y = Math.PI - 0.38;
     worldGroup.add(guildSW);
 
     const guildSE = createCityGuildhouseMesh(palette, palette.coatRedMat);
-    guildSE.position.set(CITY_CENTER_X + 22.5, 0, CITY_CENTER_Z + 20.5);
+    guildSE.position.set(CITY_CENTER_X + 27.5, 0, CITY_CENTER_Z + 24.5);
     guildSE.rotation.y = Math.PI + 0.38;
     worldGroup.add(guildSE);
 
     // Wrought-iron warm streetlamps along the avenues and plaza perimeter
     const lampCoords: Array<[number, number, number]> = [
-      [CITY_CENTER_X - 34, -3.2, Math.PI / 2],
-      [CITY_CENTER_X - 34, 3.2, -Math.PI / 2],
-      [CITY_CENTER_X - 22, -3.2, Math.PI / 2],
-      [CITY_CENTER_X - 22, 3.2, -Math.PI / 2],
-      [CITY_CENTER_X - 8.5, -8.5, Math.PI / 4],
-      [CITY_CENTER_X + 8.5, -8.5, -Math.PI / 4],
-      [CITY_CENTER_X - 8.5, 8.5, (Math.PI * 3) / 4],
-      [CITY_CENTER_X + 8.5, 8.5, (-Math.PI * 3) / 4],
+      [CITY_CENTER_X - 48, -3.4, Math.PI / 2],
+      [CITY_CENTER_X - 48, 3.4, -Math.PI / 2],
+      [CITY_CENTER_X - 30, -3.4, Math.PI / 2],
+      [CITY_CENTER_X - 30, 3.4, -Math.PI / 2],
+      [CITY_CENTER_X - 11.5, -11.5, Math.PI / 4],
+      [CITY_CENTER_X + 11.5, -11.5, -Math.PI / 4],
+      [CITY_CENTER_X - 11.5, 11.5, (Math.PI * 3) / 4],
+      [CITY_CENTER_X + 11.5, 11.5, (-Math.PI * 3) / 4],
     ];
     for (const [lx, lz, lyaw] of lampCoords) {
       const lamp = createCityStreetlampMesh(palette);
@@ -486,7 +541,7 @@ export function createZoneTerrain(
       metalness: 0.14,
     });
 
-    const archCount = 18;
+    const archCount = 22;
     for (let i = 0; i < archCount; i++) {
       const angle = (i / archCount) * Math.PI * 2;
       // Leave wide welcoming openings at both the West Gate (angle ~ Math.PI) and East Trial Arena Archway (angle ~ 0)
@@ -494,7 +549,7 @@ export function createZoneTerrain(
         continue;
       }
 
-      const r = 43.5 + (i % 2) * 3.2;
+      const r = 58.5 + (i % 2) * 3.8;
       const ax = CITY_CENTER_X + Math.cos(angle) * r;
       const az = CITY_CENTER_Z + Math.sin(angle) * r;
       const ay = groundHeightAt(ax, az);
@@ -504,7 +559,7 @@ export function createZoneTerrain(
       pillar.rotation.y = Math.atan2(CITY_CENTER_X - ax, CITY_CENTER_Z - az);
 
       // Massive cavern wall column curving inward like a vaulted frost cave rib
-      const colH = 12.5 + (i % 3) * 2.4;
+      const colH = 13.5 + (i % 3) * 2.6;
       const col = new THREE.Mesh(
         new THREE.CylinderGeometry(1.4, 2.6, colH, 7),
         caveStoneMat,
@@ -555,12 +610,12 @@ export function createZoneTerrain(
   {
     const bossSpec = getZoneBossSpec(zone);
     const ay = groundHeightAt(bossSpec.arenaX, bossSpec.arenaZ);
-    const padRadius = zone === 'city' ? 11.5 : 12.8;
+    const padRadius = zone === 'city' ? 11.5 : 13.5;
     const arenaGroup = new THREE.Group();
     arenaGroup.position.set(bossSpec.arenaX, ay, bossSpec.arenaZ);
 
     const slabMat = new THREE.MeshStandardMaterial({
-      color: zone === 'level2' ? 0x3b5875 : zone === 'city' ? 0x2b2430 : 0x3e3a35,
+      color: isHighWilderness ? 0x3b5875 : zone === 'city' ? 0x2b2430 : 0x3e3a35,
       roughness: 0.78,
       metalness: 0.18,
       polygonOffset: true,
@@ -600,7 +655,7 @@ export function createZoneTerrain(
     arenaGroup.add(outerRing, innerRing);
 
     const pillarStoneMat = new THREE.MeshStandardMaterial({
-      color: zone === 'level2' ? 0x6283a3 : zone === 'city' ? 0x3a3140 : 0x524c44,
+      color: isHighWilderness ? 0x6283a3 : zone === 'city' ? 0x3a3140 : 0x524c44,
       roughness: 0.72,
       metalness: 0.22,
     });
@@ -637,15 +692,27 @@ export function createZoneTerrain(
   }
 
   // Natural perimeter craggy granite boulders & alpine/cavern ridge stones (InstancedMesh)
-  const rockGeo = createCraggyRockGeometry(1.15, 2, isLevel2 ? 13 : isCity ? 19 : 7);
-  const rockCount = isCity ? 84 : isLevel2 ? 88 : 92;
+  const rockSeed =
+    zone === 'level5'
+      ? 29
+      : zone === 'level4'
+        ? 23
+        : zone === 'level3'
+          ? 17
+          : zone === 'level2'
+            ? 13
+            : isCity
+              ? 19
+              : 7;
+  const rockGeo = createCraggyRockGeometry(1.15, 2, rockSeed);
+  const rockCount = isCity ? 88 : 96;
   const rockMat = isCity
     ? new THREE.MeshStandardMaterial({
         color: 0x5c738c,
         roughness: 0.68,
         metalness: 0.18,
       })
-    : isLevel2
+    : isHighWilderness
       ? new THREE.MeshStandardMaterial({
           color: 0xaec8e0,
           roughness: 0.62,
@@ -663,30 +730,33 @@ export function createZoneTerrain(
     const angle = (i / rockCount) * Math.PI * 2 + (i % 3) * 0.08;
     const isInnerVignette = !isCity && i % 5 === 0;
     const r = isInnerVignette
-      ? 18 + ((i * 7) % (spec.radius - 26))
-      : spec.radius + (isCity ? -6 : 2) + ((i * 11) % 12);
+      ? 22 + ((i * 7) % (spec.radius - 32))
+      : spec.radius + (isCity ? -6 : 2) + ((i * 11) % 14);
     let rx = spec.centerX + Math.cos(angle) * r;
     let rz = spec.centerZ + Math.sin(angle) * r;
 
     // Keep North Road, East Road & Portal approaches clear of oversized boulders
     if (
-      Math.hypot(rx - spec.portalX, rz - spec.portalZ) < 9.5 ||
-      (zone === 'level1' && Math.abs(rx) < 5.5 && rz < -8 && rz > -72) ||
-      (zone === 'level1' && Math.abs(rz) < 5.5 && rx > 8 && rx < 74) ||
-      (zone === 'level1' && Math.hypot(rx - LEVEL1_CITY_PORTAL_X, rz - LEVEL1_CITY_PORTAL_Z) < 9.5) ||
-      (isLevel2 && Math.hypot(rx - spec.hearthX, rz - spec.hearthZ) < 9.5)
+      Math.hypot(rx - spec.portalX, rz - spec.portalZ) < 10.5 ||
+      (spec.forwardPortalX !== undefined &&
+        spec.forwardPortalZ !== undefined &&
+        Math.hypot(rx - spec.forwardPortalX, rz - spec.forwardPortalZ) < 10.5) ||
+      (zone === 'level1' && Math.abs(rx) < 5.5 && rz < -8 && rz > -102) ||
+      (zone === 'level1' && Math.abs(rz) < 5.5 && rx > 8 && rx < 102) ||
+      (zone === 'level1' && Math.hypot(rx - LEVEL1_CITY_PORTAL_X, rz - LEVEL1_CITY_PORTAL_Z) < 10.5) ||
+      (isHighWilderness && Math.hypot(rx - spec.hearthX, rz - spec.hearthZ) < 10.5)
     ) {
-      rz += (rz >= 0 ? 1 : -1) * 10.5;
+      rz += (rz >= spec.centerZ ? 1 : -1) * 11.5;
     }
 
     // Keep Zone Boss Arena clear of decorative boulders
     const arenaDx = rx - arenaBossSpec.arenaX;
     const arenaDz = rz - arenaBossSpec.arenaZ;
     const arenaDist = Math.hypot(arenaDx, arenaDz);
-    if (arenaDist < 16.5) {
+    if (arenaDist < 17.5) {
       const pushNorm = arenaDist || 1;
-      rx = arenaBossSpec.arenaX + (arenaDx / pushNorm) * 17.5;
-      rz = arenaBossSpec.arenaZ + (arenaDz / pushNorm) * 17.5;
+      rx = arenaBossSpec.arenaX + (arenaDx / pushNorm) * 18.5;
+      rz = arenaBossSpec.arenaZ + (arenaDz / pushNorm) * 18.5;
     }
 
     const ry = groundHeightAt(rx, rz);
@@ -711,7 +781,7 @@ export function createZoneTerrain(
     if (isCity) {
       const tint = 0.68 + (i % 5) * 0.05;
       rockColor.setRGB(tint * 0.78, tint * 0.92, tint * 1.12);
-    } else if (isLevel2) {
+    } else if (isHighWilderness) {
       const tint = 0.8 + (i % 5) * 0.04;
       rockColor.setRGB(tint * 0.86, tint * 0.96, tint * 1.1);
     } else {
@@ -726,13 +796,13 @@ export function createZoneTerrain(
   worldGroup.add(rocks);
 
   // Outer dense backdrop forest ring (multi-tier sculpted pines + wind-reactive crowns)
-  const bgCount = isCity ? 76 : isLevel2 ? 115 : 132;
+  const bgCount = isCity ? 84 : 136;
   const bgTrunkGeo = new THREE.CylinderGeometry(0.24, 0.46, 3.2, 8);
-  const bgTier1 = createSculptedTreeTierGeometry(2.3, 2.7, isLevel2 ? 31 : 19);
+  const bgTier1 = createSculptedTreeTierGeometry(2.3, 2.7, isHighWilderness ? 31 : 19);
   bgTier1.translate(0, -1.25, 0);
-  const bgTier2 = createSculptedTreeTierGeometry(1.75, 2.4, isLevel2 ? 37 : 23);
+  const bgTier2 = createSculptedTreeTierGeometry(1.75, 2.4, isHighWilderness ? 37 : 23);
   bgTier2.translate(0, 0.35, 0);
-  const bgTier3 = createSculptedTreeTierGeometry(1.15, 2.1, isLevel2 ? 41 : 29);
+  const bgTier3 = createSculptedTreeTierGeometry(1.15, 2.1, isHighWilderness ? 41 : 29);
   bgTier3.translate(0, 1.75, 0);
   const bgConeGeo = mergeGeometries([bgTier1, bgTier2, bgTier3], false) ?? bgTier1;
   bgTier1.dispose();
@@ -742,7 +812,7 @@ export function createZoneTerrain(
   const bgTrunks = new THREE.InstancedMesh(bgTrunkGeo, palette.barkMat, bgCount);
   const bgCones = new THREE.InstancedMesh(
     bgConeGeo,
-    isLevel2 || isCity ? palette.elderNeedleMat : palette.spruceNeedleMat,
+    isHighWilderness || isCity ? palette.elderNeedleMat : palette.spruceNeedleMat,
     bgCount,
   );
   const coneColor = new THREE.Color();
@@ -750,7 +820,7 @@ export function createZoneTerrain(
 
   for (let i = 0; i < bgCount; i++) {
     const a = (i / bgCount) * Math.PI * 2 + (i % 5) * 0.04;
-    const r = spec.radius + 4.0 + ((i * 13) % 20);
+    const r = spec.radius + 4.0 + ((i * 13) % 24);
     const tx = spec.centerX + Math.cos(a) * r;
     const tz = spec.centerZ + Math.sin(a) * r;
     const ty = groundHeightAt(tx, tz);
@@ -768,7 +838,7 @@ export function createZoneTerrain(
     dummy.updateMatrix();
     bgCones.setMatrixAt(i, dummy.matrix);
 
-    if (isLevel2 || isCity) {
+    if (isHighWilderness || isCity) {
       coneColor.setHSL(0.49, 0.38, 0.2 + (i % 4) * 0.03);
     } else {
       coneColor.setHSL(0.43, 0.34, 0.17 + (i % 4) * 0.03);
@@ -787,10 +857,10 @@ export function createZoneTerrain(
     bases: bgBases,
   } satisfies BgForestWindState;
 
-  // Environmental Realism Polish: Frozen Glacial Pond & Distant Alpine Mountain Skyline (Level 1 & Level 2)
+  // Environmental Realism Polish: Frozen Glacial Pond & Distant Alpine Mountain Skyline (Wilderness Zones)
   if (!isCity) {
-    const pondX = -28;
-    const pondZ = isLevel2 ? spec.centerZ + 18 : 22;
+    const pondX = spec.centerX - 38;
+    const pondZ = spec.centerZ + 26;
     const pondY = groundHeightAt(pondX, pondZ) + 0.06;
 
     const glacialIceMat = new THREE.MeshPhysicalMaterial({
@@ -802,7 +872,7 @@ export function createZoneTerrain(
       ior: 1.31,
       reflectivity: 0.72,
     });
-    const pondMesh = new THREE.Mesh(new THREE.CircleGeometry(7.4, 28), glacialIceMat);
+    const pondMesh = new THREE.Mesh(new THREE.CircleGeometry(7.8, 28), glacialIceMat);
     pondMesh.rotation.x = -Math.PI / 2;
     pondMesh.scale.set(1.32, 0.88, 1);
     pondMesh.position.set(pondX, pondY, pondZ);
@@ -816,8 +886,8 @@ export function createZoneTerrain(
     });
     for (let r = 0; r < 14; r++) {
       const a = (r / 14) * Math.PI * 2;
-      const sx = pondX + Math.cos(a) * 9.5;
-      const sz = pondZ + Math.sin(a) * 6.3;
+      const sx = pondX + Math.cos(a) * 10.0;
+      const sz = pondZ + Math.sin(a) * 6.6;
       const bank = new THREE.Mesh(
         createCraggyRockGeometry(0.95 + (r % 3) * 0.25, 1, 50 + r),
         r % 2 === 0 ? palette.rockMat : pondRimMat,
@@ -830,19 +900,19 @@ export function createZoneTerrain(
     }
 
     // Scattered natural pine saplings & snowdrifts in outer wilderness clearings
-    const saplingCount = isLevel2 ? 42 : 48;
+    const saplingCount = 54;
     const sapGeo = createSculptedTreeTierGeometry(0.68, 1.35, 91);
-    const sapMat = isLevel2 ? palette.elderNeedleMat : palette.pineNeedleMat;
+    const sapMat = isHighWilderness ? palette.elderNeedleMat : palette.pineNeedleMat;
     const saplings = new THREE.InstancedMesh(sapGeo, sapMat, saplingCount);
     saplings.castShadow = true;
     saplings.receiveShadow = true;
     for (let s = 0; s < saplingCount; s++) {
       const a = s * 2.39996 + 0.2;
-      const rad = 20 + ((s * 17) % Math.max(12, spec.radius - 24));
+      const rad = 24 + ((s * 17) % Math.max(16, spec.radius - 28));
       let sx = spec.centerX + Math.cos(a) * rad;
       let sz = spec.centerZ + Math.sin(a) * rad;
-      if (Math.hypot(sx - pondX, sz - pondZ) < 11.5) {
-        sx += 14;
+      if (Math.hypot(sx - pondX, sz - pondZ) < 12.5) {
+        sx += 15;
       }
       if (
         (zone === 'level1' && Math.abs(sx) < 4.5 && sz < -4) ||
@@ -854,10 +924,10 @@ export function createZoneTerrain(
       const sapDx = sx - arenaBossSpec.arenaX;
       const sapDz = sz - arenaBossSpec.arenaZ;
       const sapDist = Math.hypot(sapDx, sapDz);
-      if (sapDist < 16.5) {
+      if (sapDist < 17.5) {
         const pushNorm = sapDist || 1;
-        sx = arenaBossSpec.arenaX + (sapDx / pushNorm) * 17.5;
-        sz = arenaBossSpec.arenaZ + (sapDz / pushNorm) * 17.5;
+        sx = arenaBossSpec.arenaX + (sapDx / pushNorm) * 18.5;
+        sz = arenaBossSpec.arenaZ + (sapDz / pushNorm) * 18.5;
       }
       const sy = groundHeightAt(sx, sz);
       const sc = 0.65 + (s % 4) * 0.2;
@@ -872,10 +942,10 @@ export function createZoneTerrain(
     worldGroup.add(saplings);
 
     // Distant Snow-Capped Faceted Alpine Mountain Ridge Skyline Ring
-    const peakCount = 26;
+    const peakCount = 28;
     const peakGeo = new THREE.ConeGeometry(16, 26, 7);
     const peakMat = new THREE.MeshStandardMaterial({
-      color: isLevel2 ? 0x627c96 : 0x5c7288,
+      color: isHighWilderness ? 0x627c96 : 0x5c7288,
       roughness: 0.9,
       metalness: 0.04,
       flatShading: true,

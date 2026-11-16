@@ -350,11 +350,17 @@ export interface DayNightState {
   wildlifeActivityLabel: string;
 }
 
-export type ZoneId = 'level1' | 'level2' | 'city';
+export type ZoneId =
+  | 'level1'
+  | 'level2'
+  | 'level3'
+  | 'level4'
+  | 'level5'
+  | 'city';
 
 export interface ZoneHudInfo {
   id: ZoneId;
-  levelNumber: 1 | 2 | 3;
+  levelNumber: 1 | 2 | 3 | 4 | 5 | 6;
   name: string;
   subtitle: string;
   playerX: number;
@@ -363,11 +369,20 @@ export interface ZoneHudInfo {
   portalDistance: number;
   portalDirection: string;
   nearPortal: boolean;
+  forwardPortalDistance?: number;
+  forwardPortalDirection?: string;
+  nearForwardPortal?: boolean;
+  forwardZoneId?: ZoneId;
+  forwardZoneName?: string;
+  returnZoneId?: ZoneId;
+  returnZoneName?: string;
   cityPortalDistance?: number;
   cityPortalDirection?: string;
   nearCityPortal?: boolean;
   yieldMult: number;
   xpMult: number;
+  chillMult: number;
+  difficultyMult: number;
 }
 
 export type GearSlotId = 'coat' | 'boots' | 'gloves' | 'pack';
@@ -598,7 +613,7 @@ export interface LastLootRollHudInfo {
 
 export interface LootScalingHudInfo {
   zone: ZoneId;
-  zoneTier: 1 | 2 | 3;
+  zoneTier: 1 | 2 | 3 | 4 | 5 | 6;
   effectiveGearLevel: number;
   progressionIndex: number; // 0..1
   tierLabel: string;
@@ -700,25 +715,45 @@ export interface PetsHudState {
 export type ZoneBossId =
   | 'skarn_colossus'
   | 'veyra_sovereign'
-  | 'ignis_warden';
+  | 'ignis_warden'
+  | 'malakor_gargoyle'
+  | 'ulthar_behemoth'
+  | 'astraea_valkyrie';
 
 export type BossAttackPatternId =
   | 'root_slam'
   | 'bark_barrage'
   | 'tremor_charge'
+  | 'briar_fissure_cross'
   | 'blizzard_nova'
   | 'glacial_volley'
   | 'meteor_shards'
+  | 'cryo_ring_tempest'
   | 'magma_cleave'
   | 'ember_spiral'
-  | 'leap_slam';
+  | 'leap_slam'
+  | 'forge_cinder_cross'
+  | 'rimefang_shatter'
+  | 'abyssal_icicles'
+  | 'wyrm_glaive_rush'
+  | 'abyssal_void_ring'
+  | 'tectonic_permafrost'
+  | 'obsidian_comets'
+  | 'monolith_crush'
+  | 'caldera_cross_eruption'
+  | 'supernova_cataclysm'
+  | 'starfall_spiral'
+  | 'void_aurora_judgment'
+  | 'starfall_nova_matrix';
 
 export type BossAttackKind =
   | 'aoe'
   | 'projectile_fan'
   | 'charge'
   | 'meteor'
-  | 'leap';
+  | 'leap'
+  | 'cross_eruption'
+  | 'ring_wave';
 
 export interface ZoneBossHudInfo {
   id: ZoneBossId;
@@ -735,6 +770,7 @@ export interface ZoneBossHudInfo {
   telegraphLabel: string | null;
   telegraphProgress: number; // 0..1
   respawnSeconds: number;
+  tacticLabel?: string;
 }
 
 export interface MinimapBossBlip {
@@ -745,6 +781,17 @@ export interface MinimapBossBlip {
   z: number;
   alive: boolean;
   enraged: boolean;
+}
+
+export type ChatLogCategory = 'drop' | 'loot' | 'combat' | 'notification';
+
+export interface ChatLogEntry {
+  id: number;
+  timestamp: string;
+  category: ChatLogCategory;
+  text: string;
+  accent?: 'gold' | 'cyan' | 'purple' | 'red' | 'green' | 'amber';
+  rarity?: ItemRarity;
 }
 
 export interface HudSnapshot {
@@ -819,6 +866,7 @@ export interface HudSnapshot {
   achievements: AchievementHudEntry[];
   achievementsUnlockedCount: number;
   pets: PetsHudState;
+  chatLogs: ChatLogEntry[];
   toastText: string | null;
 }
 

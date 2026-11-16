@@ -52,6 +52,9 @@ export function MinimapOverlay({
     zone.id,
   );
   const inLevel2 = zone.id === 'level2';
+  const inLevel3 = zone.id === 'level3';
+  const inLevel4 = zone.id === 'level4';
+  const inLevel5 = zone.id === 'level5';
   const inCity = zone.id === 'city';
 
   return (
@@ -64,10 +67,16 @@ export function MinimapOverlay({
       className={`pointer-events-auto rounded-xl border shadow-[0_8px_22px_rgba(8,14,24,0.58)] transition-colors ${
         inCity
           ? 'bg-[#1f1a12]/94 border-[#f6c344]/65'
-          : inLevel2
-            ? 'bg-[#102638]/94 border-[#5be7ff]/60'
-            : 'bg-[#162336]/92 border-[#6e8eb0]/45'
-      } ${collapsed ? 'w-auto' : 'w-[148px] sm:w-[184px]'}`}
+          : inLevel5
+            ? 'bg-[#1b102c]/94 border-[#f0abfc]/65'
+            : inLevel4
+              ? 'bg-[#26111c]/94 border-[#fb7185]/60'
+              : inLevel3
+                ? 'bg-[#121f38]/94 border-[#818cf8]/60'
+                : inLevel2
+                  ? 'bg-[#102638]/94 border-[#5be7ff]/60'
+                  : 'bg-[#162336]/92 border-[#6e8eb0]/45'
+      } ${collapsed ? 'w-auto' : 'w-[156px] sm:w-[196px]'}`}
     >
       {/* Header / Collapse Toggle */}
       <button
@@ -85,12 +94,12 @@ export function MinimapOverlay({
         <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#dce6f2]">
           <MapIcon
             className={`w-3.5 h-3.5 shrink-0 ${
-              inCity ? 'text-[#f6c344]' : inLevel2 ? 'text-[#7be0ff]' : 'text-[#f6c344]'
+              inCity ? 'text-[#f6c344]' : inLevel2 || inLevel3 || inLevel4 || inLevel5 ? 'text-[#7be0ff]' : 'text-[#f6c344]'
             }`}
           />
           <span>Map</span>
           <span className="text-[#9db4cb] font-semibold">
-            {inCity ? 'CITY' : `L${zone.levelNumber}`}
+            {inCity ? 'CITY' : `L${zone.levelNumber} · ${zone.difficultyMult}x`}
           </span>
         </span>
         {collapsed ? (
@@ -102,15 +111,27 @@ export function MinimapOverlay({
 
       {!collapsed && (
         <div className="px-2 pb-2 pt-0.5 flex flex-col gap-1.5 border-t border-[#6e8eb0]/25">
-          {/* Tri-Zone North-Up SVG Map */}
+          {/* 6-Zone North-Up SVG Map */}
           <div className="relative rounded-lg bg-[#0d1726] border border-[#3e536b]/80 overflow-hidden">
             <svg
               viewBox={`0 0 ${layout.width} ${layout.height}`}
               className="w-full h-auto block"
               role="img"
-              aria-label={`Minimap showing Frostwood Valley, northern Glacial Highlands, and eastern Frostcave City. Player in ${zone.name}.`}
+              aria-label={`Minimap showing all 6 Frostwood zones. Player in ${zone.name}.`}
             >
               <defs>
+                <radialGradient id="l5-zone-grad" cx="50%" cy="50%" r="55%">
+                  <stop offset="0%" stopColor={inLevel5 ? '#4c1d95' : '#1e1338'} />
+                  <stop offset="100%" stopColor={inLevel5 ? '#2e1065' : '#120b24'} />
+                </radialGradient>
+                <radialGradient id="l4-zone-grad" cx="50%" cy="50%" r="55%">
+                  <stop offset="0%" stopColor={inLevel4 ? '#4c1128' : '#26111c'} />
+                  <stop offset="100%" stopColor={inLevel4 ? '#310b19' : '#180a12'} />
+                </radialGradient>
+                <radialGradient id="l3-zone-grad" cx="50%" cy="50%" r="55%">
+                  <stop offset="0%" stopColor={inLevel3 ? '#1e3a8a' : '#132042'} />
+                  <stop offset="100%" stopColor={inLevel3 ? '#172554' : '#0d152e'} />
+                </radialGradient>
                 <radialGradient id="l2-zone-grad" cx="50%" cy="50%" r="55%">
                   <stop offset="0%" stopColor={inLevel2 ? '#1c4d6b' : '#132a3e'} />
                   <stop offset="100%" stopColor={inLevel2 ? '#12334a' : '#0f2030'} />
@@ -164,6 +185,26 @@ export function MinimapOverlay({
                 N
               </text>
 
+              {/* Level 3: Rimefang Abyss Circle (NW) */}
+              <circle
+                cx={layout.level3Zone.x}
+                cy={layout.level3Zone.y}
+                r={layout.level3Zone.r}
+                fill="url(#l3-zone-grad)"
+                stroke={inLevel3 ? '#a5b4fc' : '#435585'}
+                strokeWidth={inLevel3 ? 1.8 : 1.0}
+              />
+              <text
+                x={layout.level3Zone.x}
+                y={layout.level3Zone.y - layout.level3Zone.r - 3.5}
+                textAnchor="middle"
+                fill={inLevel3 ? '#c7d2fe' : '#859bc4'}
+                fontSize="6.2"
+                fontWeight="700"
+              >
+                L3 ABYSS (9x)
+              </text>
+
               {/* Level 2: Northern Glacial Highlands Circle */}
               <circle
                 cx={layout.level2Zone.x}
@@ -175,14 +216,53 @@ export function MinimapOverlay({
               />
               <text
                 x={layout.level2Zone.x}
-                y={layout.level2Zone.y - layout.level2Zone.r - 4.5}
+                y={layout.level2Zone.y - layout.level2Zone.r - 3.5}
                 textAnchor="middle"
                 fill={inLevel2 ? '#a5f3fc' : '#85a6c4'}
-                fontSize="6.8"
+                fontSize="6.2"
                 fontWeight="700"
-                letterSpacing="0.5"
               >
-                L2 HIGHLANDS
+                L2 HIGHLANDS (3x)
+              </text>
+
+              {/* Level 5: Starfall Eternal Zero Circle (NE) */}
+              <circle
+                cx={layout.level5Zone.x}
+                cy={layout.level5Zone.y}
+                r={layout.level5Zone.r}
+                fill="url(#l5-zone-grad)"
+                stroke={inLevel5 ? '#f0abfc' : '#704a91'}
+                strokeWidth={inLevel5 ? 1.8 : 1.0}
+              />
+              <text
+                x={layout.level5Zone.x}
+                y={layout.level5Zone.y - layout.level5Zone.r - 3.5}
+                textAnchor="middle"
+                fill={inLevel5 ? '#f5d0fe' : '#b794d6'}
+                fontSize="6.2"
+                fontWeight="700"
+              >
+                L5 STARFALL (81x)
+              </text>
+
+              {/* Level 4: Obsidian Permafrost Circle (SW) */}
+              <circle
+                cx={layout.level4Zone.x}
+                cy={layout.level4Zone.y}
+                r={layout.level4Zone.r}
+                fill="url(#l4-zone-grad)"
+                stroke={inLevel4 ? '#fda4af' : '#874a62'}
+                strokeWidth={inLevel4 ? 1.8 : 1.0}
+              />
+              <text
+                x={layout.level4Zone.x}
+                y={layout.level4Zone.y + layout.level4Zone.r + 9.5}
+                textAnchor="middle"
+                fill={inLevel4 ? '#fecdd3' : '#c4859b'}
+                fontSize="6.2"
+                fontWeight="700"
+              >
+                L4 PERMAFROST (27x)
               </text>
 
               {/* Level 1: Starting Frostwood Valley Circle */}
@@ -196,14 +276,13 @@ export function MinimapOverlay({
               />
               <text
                 x={layout.level1Zone.x}
-                y={layout.level1Zone.y + layout.level1Zone.r + 10.5}
+                y={layout.level1Zone.y + layout.level1Zone.r + 9.5}
                 textAnchor="middle"
                 fill={zone.id === 'level1' ? '#fde68a' : '#85a6c4'}
-                fontSize="6.8"
+                fontSize="6.2"
                 fontWeight="700"
-                letterSpacing="0.5"
               >
-                L1 VALLEY
+                L1 VALLEY (1x)
               </text>
 
               {/* Frostcave City: Eastern Subterranean Cavern Circle */}
@@ -217,26 +296,55 @@ export function MinimapOverlay({
               />
               <text
                 x={layout.cityZone.x}
-                y={layout.cityZone.y - layout.cityZone.r - 4.5}
+                y={layout.cityZone.y + layout.cityZone.r + 9.5}
                 textAnchor="middle"
                 fill={inCity ? '#fde047' : '#d6b672'}
-                fontSize="6.5"
+                fontSize="6.0"
                 fontWeight="700"
-                letterSpacing="0.4"
               >
                 FROSTCAVE CITY
               </text>
 
-              {/* Arcane Portal Rift Link between Level 1 & Level 2 */}
+              {/* Arcane Portal Rift Links across L1 -> L2 -> L3 -> L4 -> L5 */}
               <line
                 x1={layout.portal1.x}
                 y1={layout.portal1.y}
                 x2={layout.portal2.x}
                 y2={layout.portal2.y}
                 stroke="#5be7ff"
-                strokeWidth="1.5"
+                strokeWidth="1.4"
                 strokeDasharray="3 2.5"
                 opacity="0.82"
+              />
+              <line
+                x1={layout.portal2Forward.x}
+                y1={layout.portal2Forward.y}
+                x2={layout.portal3Return.x}
+                y2={layout.portal3Return.y}
+                stroke="#818cf8"
+                strokeWidth="1.3"
+                strokeDasharray="3 2.5"
+                opacity="0.78"
+              />
+              <line
+                x1={layout.portal3Forward.x}
+                y1={layout.portal3Forward.y}
+                x2={layout.portal4Return.x}
+                y2={layout.portal4Return.y}
+                stroke="#fb7185"
+                strokeWidth="1.3"
+                strokeDasharray="3 2.5"
+                opacity="0.78"
+              />
+              <line
+                x1={layout.portal4Forward.x}
+                y1={layout.portal4Forward.y}
+                x2={layout.portal5Return.x}
+                y2={layout.portal5Return.y}
+                stroke="#f0abfc"
+                strokeWidth="1.2"
+                strokeDasharray="2.5 2.5"
+                opacity="0.68"
               />
 
               {/* Golden Portal Rift Link between Level 1 East Gate & Frostcave City */}
@@ -246,7 +354,7 @@ export function MinimapOverlay({
                 x2={layout.cityPortal2.x}
                 y2={layout.cityPortal2.y}
                 stroke="#f6c344"
-                strokeWidth="1.5"
+                strokeWidth="1.4"
                 strokeDasharray="3 2"
                 opacity="0.88"
               />
@@ -258,7 +366,7 @@ export function MinimapOverlay({
                 x2={layout.portal1.x}
                 y2={layout.portal1.y}
                 stroke="#d6c5a7"
-                strokeWidth="2.1"
+                strokeWidth="1.9"
                 strokeLinecap="round"
                 opacity="0.72"
               />
@@ -270,7 +378,7 @@ export function MinimapOverlay({
                 x2={layout.cityPortal1.x}
                 y2={layout.cityPortal1.y}
                 stroke="#eab308"
-                strokeWidth="1.9"
+                strokeWidth="1.8"
                 strokeLinecap="round"
                 opacity="0.72"
               />
@@ -282,97 +390,53 @@ export function MinimapOverlay({
                 x2={layout.cityFountain.x}
                 y2={layout.cityFountain.y}
                 stroke="#fcd34d"
-                strokeWidth="1.8"
+                strokeWidth="1.7"
                 strokeLinecap="round"
                 opacity="0.68"
-              />
-
-              {/* Level 2 Brazier Plaza Path (Return Portal -> Waystation Brazier) */}
-              <line
-                x1={layout.portal2.x}
-                y1={layout.portal2.y}
-                x2={layout.brazier.x}
-                y2={layout.brazier.y}
-                stroke="#b8cbe0"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                opacity="0.65"
               />
 
               {/* Campfire Hearth Landmark (Level 1 Center) */}
               <circle
                 cx={layout.camp.x}
                 cy={layout.camp.y}
-                r={4.2}
+                r={3.8}
                 fill="#f59e3d"
                 fillOpacity="0.24"
               />
               <polygon
-                points={`${layout.camp.x},${layout.camp.y - 3.6} ${layout.camp.x + 3.2},${layout.camp.y} ${layout.camp.x},${layout.camp.y + 3.6} ${layout.camp.x - 3.2},${layout.camp.y}`}
+                points={`${layout.camp.x},${layout.camp.y - 3.2} ${layout.camp.x + 2.8},${layout.camp.y} ${layout.camp.x},${layout.camp.y + 3.2} ${layout.camp.x - 2.8},${layout.camp.y}`}
                 fill="#f59e3d"
                 stroke="#fff2cc"
-                strokeWidth="0.7"
+                strokeWidth="0.65"
               />
 
-              {/* Waystation Brazier Landmark (Level 2 South Plaza) */}
-              <circle
-                cx={layout.brazier.x}
-                cy={layout.brazier.y}
-                r={3.2}
-                fill="#fb923c"
-                stroke="#ffedd5"
-                strokeWidth="0.7"
-              />
+              {/* Waystation Braziers (Levels 2, 3, 4, 5) */}
+              <circle cx={layout.brazier.x} cy={layout.brazier.y} r={2.8} fill="#fb923c" stroke="#ffedd5" strokeWidth="0.6" />
+              <circle cx={layout.brazier3.x} cy={layout.brazier3.y} r={2.8} fill="#818cf8" stroke="#e0e7ff" strokeWidth="0.6" />
+              <circle cx={layout.brazier4.x} cy={layout.brazier4.y} r={2.8} fill="#fb7185" stroke="#ffe4e6" strokeWidth="0.6" />
+              <circle cx={layout.brazier5.x} cy={layout.brazier5.y} r={2.8} fill="#e879f9" stroke="#fae8ff" strokeWidth="0.6" />
 
               {/* Frostcave City Central Clocktower Hearth Fountain */}
               <circle
                 cx={layout.cityFountain.x}
                 cy={layout.cityFountain.y}
-                r={3.4}
+                r={3.0}
                 fill="#f6c344"
                 stroke="#fffbeb"
-                strokeWidth="0.8"
+                strokeWidth="0.7"
               />
 
-              {/* Level 1 Northgate Portal */}
-              <circle
-                cx={layout.portal1.x}
-                cy={layout.portal1.y}
-                r={3.8}
-                fill="#0e2a3f"
-                stroke="#5be7ff"
-                strokeWidth="1.6"
-              />
-
-              {/* Level 2 Return Portal */}
-              <circle
-                cx={layout.portal2.x}
-                cy={layout.portal2.y}
-                r={3.8}
-                fill="#292211"
-                stroke="#f6c344"
-                strokeWidth="1.6"
-              />
-
-              {/* Level 1 East City Gate Portal */}
-              <circle
-                cx={layout.cityPortal1.x}
-                cy={layout.cityPortal1.y}
-                r={3.4}
-                fill="#292211"
-                stroke="#f6c344"
-                strokeWidth="1.5"
-              />
-
-              {/* Frostcave City Return Gate Portal */}
-              <circle
-                cx={layout.cityPortal2.x}
-                cy={layout.cityPortal2.y}
-                r={3.4}
-                fill="#292211"
-                stroke="#fde047"
-                strokeWidth="1.5"
-              />
+              {/* Portal Nodes */}
+              <circle cx={layout.portal1.x} cy={layout.portal1.y} r={3.2} fill="#0e2a3f" stroke="#5be7ff" strokeWidth="1.4" />
+              <circle cx={layout.portal2.x} cy={layout.portal2.y} r={3.2} fill="#292211" stroke="#f6c344" strokeWidth="1.4" />
+              <circle cx={layout.portal2Forward.x} cy={layout.portal2Forward.y} r={3.0} fill="#1e1b4b" stroke="#818cf8" strokeWidth="1.3" />
+              <circle cx={layout.portal3Return.x} cy={layout.portal3Return.y} r={3.0} fill="#0e2a3f" stroke="#5be7ff" strokeWidth="1.3" />
+              <circle cx={layout.portal3Forward.x} cy={layout.portal3Forward.y} r={3.0} fill="#4c0519" stroke="#fb7185" strokeWidth="1.3" />
+              <circle cx={layout.portal4Return.x} cy={layout.portal4Return.y} r={3.0} fill="#1e1b4b" stroke="#818cf8" strokeWidth="1.3" />
+              <circle cx={layout.portal4Forward.x} cy={layout.portal4Forward.y} r={3.0} fill="#3b0764" stroke="#f0abfc" strokeWidth="1.3" />
+              <circle cx={layout.portal5Return.x} cy={layout.portal5Return.y} r={3.0} fill="#4c0519" stroke="#fb7185" strokeWidth="1.3" />
+              <circle cx={layout.cityPortal1.x} cy={layout.cityPortal1.y} r={3.0} fill="#292211" stroke="#f6c344" strokeWidth="1.3" />
+              <circle cx={layout.cityPortal2.x} cy={layout.cityPortal2.y} r={3.0} fill="#292211" stroke="#fde047" strokeWidth="1.3" />
 
               {/* Hunter's Sight Scan Aura & Revealed Wildlife Blips */}
               {sightActive && (
@@ -541,7 +605,7 @@ export function MinimapOverlay({
           <div className="flex flex-col gap-0.5 text-[10px] leading-tight tabular-nums text-[#c7d6e6]">
             <div className="flex items-center justify-between">
               <span className="text-[#9db4cb]">
-                {inCity ? 'Plaza' : inLevel2 ? 'Brazier' : 'Camp'}
+                {inCity ? 'Plaza' : zone.id === 'level1' ? 'Camp' : 'Brazier'}
               </span>
               <span className="font-bold text-[#f4efe6]">
                 {layout.hearthDistance}m {layout.hearthDirection}
@@ -549,12 +613,22 @@ export function MinimapOverlay({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#9db4cb]">
-                {inCity || inLevel2 ? 'Return' : 'L2 Gate'}
+                {zone.id === 'level1' ? 'L2 Gate' : 'Return'}
               </span>
               <span className="font-bold text-[#7be0ff]">
                 {zone.portalDistance}m {zone.portalDirection}
               </span>
             </div>
+            {zone.forwardPortalDistance !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-[#9db4cb]">
+                  L{zone.levelNumber + 1} Gate
+                </span>
+                <span className="font-bold text-[#c084fc]">
+                  {zone.forwardPortalDistance}m {zone.forwardPortalDirection}
+                </span>
+              </div>
+            )}
             {zone.id === 'level1' && zone.cityPortalDistance !== undefined && (
               <div className="flex items-center justify-between">
                 <span className="text-[#9db4cb]">City Gate</span>

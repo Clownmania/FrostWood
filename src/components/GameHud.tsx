@@ -116,6 +116,7 @@ import type {
   SkillPerkId,
   ToolUpgradeId,
   TrendResourceKey,
+  ZoneId,
 } from '../game/types';
 import {
   AxeIcon,
@@ -176,6 +177,7 @@ interface GameHudProps {
   onToggleMute: () => void;
   onPause: () => void;
   onUsePortal: () => void;
+  onSelectZone: (zone: ZoneId) => void;
   onOpenSecretChest: () => void;
   onActivateHuntersSight: () => void;
   onInspectTrack: () => void;
@@ -579,6 +581,7 @@ export function GameHud({
   onToggleMute,
   onPause,
   onUsePortal,
+  onSelectZone,
   onOpenSecretChest,
   onActivateHuntersSight,
   onInspectTrack,
@@ -595,6 +598,8 @@ export function GameHud({
   const [stationSection, setStationSection] = useState<'all' | 'craft' | 'gear'>('all');
   const [cityTraderFilter, setCityTraderFilter] = useState<'all' | CityTraderId>('all');
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'unlocked' | AchievementCategory>('all');
+  const [chatBoxCollapsed, setChatBoxCollapsed] = useState(false);
+  const [chatFilter, setChatFilter] = useState<'all' | 'loot' | 'combat' | 'notification'>('all');
 
   const axeSpec = getAxeSpec(hud.levels.axe);
   const bowSpec = getBowSpec(hud.levels.bow);
@@ -1368,6 +1373,160 @@ export function GameHud({
               </div>
             </div>
           )}
+
+          {/* Left-Side Activity ChatBox (Drops, Loot, Tactical Combat & Notifications) */}
+          {!drawerOpen && (
+            <div
+              data-testid="activity-chatbox"
+              data-collapsed={chatBoxCollapsed ? 'true' : 'false'}
+              className="pointer-events-auto w-64 sm:w-72 rounded-xl bg-[#0e1928]/94 border border-[#6e8eb0]/50 shadow-[0_8px_22px_rgba(6,11,20,0.65)] overflow-hidden"
+            >
+              {/* ChatBox Header */}
+              <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[#152438]/95 border-b border-[#6e8eb0]/35">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <MessageSquare className="w-3.5 h-3.5 text-[#7be0ff] shrink-0" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#e2eefb] truncate">
+                    Activity &amp; Loot Log
+                  </span>
+                  <span
+                    data-testid="chatbox-count"
+                    className="px-1.5 py-0.2 rounded bg-[#0b1320] border border-[#6e8eb0]/40 text-[9px] font-bold tabular-nums text-[#9fe8ff]"
+                  >
+                    {hud.chatLogs.length}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="chatbox-toggle"
+                  aria-label={chatBoxCollapsed ? 'Expand Activity Log' : 'Minimize Activity Log'}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    setChatBoxCollapsed((prev) => !prev);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-[#1d314a] hover:bg-[#274160] border border-[#6e8eb0]/40 text-[9px] font-bold uppercase tracking-wider text-[#cfe2f5] inline-flex items-center gap-0.5 cursor-pointer transition-colors"
+                >
+                  <span>{chatBoxCollapsed ? 'Show' : 'Hide'}</span>
+                  {chatBoxCollapsed ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronUp className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+
+              {!chatBoxCollapsed && (
+                <>
+                  {/* Category Filter Tabs */}
+                  <div className="flex items-center gap-1 px-2 py-1 bg-[#111d2e]/90 border-b border-[#6e8eb0]/25">
+                    {(
+                      [
+                        { id: 'all', label: 'All' },
+                        { id: 'loot', label: 'Drops & Loot' },
+                        { id: 'combat', label: 'Combat' },
+                        { id: 'notification', label: 'Alerts' },
+                      ] as const
+                    ).map((tab) => {
+                      const active = chatFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          tabIndex={-1}
+                          data-testid={`chatbox-filter-${tab.id}`}
+                          onClick={(e) => {
+                            e.currentTarget.blur();
+                            setChatFilter(tab.id);
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-[#d98a2b] text-[#131d2b]'
+                              : 'bg-[#1a2b42]/80 hover:bg-[#243b59] text-[#a9c1d9]'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Scrollable Log Feed */}
+                  <div
+                    data-testid="chatbox-log-list"
+                    className="max-h-[96px] sm:max-h-[112px] overflow-y-auto overscroll-contain px-2 py-1.5 space-y-1 text-[10px] leading-snug"
+                  >
+                    {(() => {
+                      const filtered = hud.chatLogs.filter((entry) => {
+                        if (chatFilter === 'all') return true;
+                        if (chatFilter === 'loot') {
+                          return entry.category === 'drop' || entry.category === 'loot';
+                        }
+                        return entry.category === chatFilter;
+                      });
+                      const recent = filtered.slice(-14).reverse();
+                      if (recent.length === 0) {
+                        return (
+                          <div className="py-2 text-center text-[10px] text-[#8aa4bf] italic">
+                            No {chatFilter === 'all' ? 'activity' : chatFilter} logs yet — harvest, hunt, or open chests!
+                          </div>
+                        );
+                      }
+                      return recent.map((entry) => {
+                        const badgeCls =
+                          entry.category === 'loot'
+                            ? 'bg-[#3d2e14] border-[#f6c344]/65 text-[#fde047]'
+                            : entry.category === 'drop'
+                              ? 'bg-[#153527] border-[#8ed49a]/60 text-[#a7f3d0]'
+                              : entry.category === 'combat'
+                                ? 'bg-[#3f1318] border-[#f87171]/65 text-[#fecaca]'
+                                : 'bg-[#132f45] border-[#7be0ff]/55 text-[#bae6fd]';
+                        const badgeLabel =
+                          entry.category === 'loot'
+                            ? 'LOOT'
+                            : entry.category === 'drop'
+                              ? 'DROP'
+                              : entry.category === 'combat'
+                                ? 'BOSS'
+                                : 'INFO';
+                        const textCls =
+                          entry.accent === 'gold'
+                            ? 'text-[#fde68a]'
+                            : entry.accent === 'purple'
+                              ? 'text-[#f5d0fe]'
+                              : entry.accent === 'red'
+                                ? 'text-[#fecdd3]'
+                                : entry.accent === 'green'
+                                  ? 'text-[#bbf7d0]'
+                                  : entry.accent === 'amber'
+                                    ? 'text-[#fed7aa]'
+                                    : 'text-[#e2eefb]';
+                        return (
+                          <div
+                            key={entry.id}
+                            data-testid="chatbox-entry"
+                            data-category={entry.category}
+                            className="flex items-start gap-1.5 rounded bg-[#142236]/75 px-1.5 py-0.5 border border-[#6e8eb0]/20"
+                          >
+                            <span className="text-[9px] font-mono tabular-nums text-[#88a4c0] shrink-0 mt-0.5">
+                              {entry.timestamp}
+                            </span>
+                            <span
+                              className={`px-1 py-0.1 rounded border text-[8px] font-extrabold uppercase tracking-wider shrink-0 mt-0.5 ${badgeCls}`}
+                            >
+                              {badgeLabel}
+                            </span>
+                            <span className={`font-semibold break-words min-w-0 ${textCls}`}>
+                              {entry.text}
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Top-Right Zone Compass, Time-of-Day, Weather, Camp Tier, Controls & World Minimap */}
@@ -1375,45 +1534,78 @@ export function GameHud({
           <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <div
               data-testid="zone-status"
+              data-difficulty-mult={hud.zone.difficultyMult}
               className={`hidden sm:flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
                 hud.zone.id === 'city'
                   ? 'bg-[#261d11]/95 border-[#f6c344]/70'
-                  : hud.zone.id === 'level2'
-                    ? 'bg-[#102c3d]/95 border-[#5be7ff]/65'
-                    : 'bg-[#162336]/90 border-[#6e8eb0]/45'
+                  : hud.zone.id === 'level5'
+                    ? 'bg-[#281236]/95 border-[#e879f9]/75'
+                    : hud.zone.id === 'level4'
+                      ? 'bg-[#2b1414]/95 border-[#f87171]/70'
+                      : hud.zone.id === 'level3'
+                        ? 'bg-[#1f1635]/95 border-[#a855f7]/70'
+                        : hud.zone.id === 'level2'
+                          ? 'bg-[#102c3d]/95 border-[#5be7ff]/65'
+                          : 'bg-[#162336]/90 border-[#6e8eb0]/45'
               }`}
             >
               <Compass
                 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
                   hud.zone.id === 'city'
                     ? 'text-[#f6c344]'
-                    : hud.zone.id === 'level2'
-                      ? 'text-[#7be0ff]'
-                      : 'text-[#9db4cb]'
+                    : hud.zone.id === 'level5'
+                      ? 'text-[#f0abfc]'
+                      : hud.zone.id === 'level4'
+                        ? 'text-[#fca5a5]'
+                        : hud.zone.id === 'level3'
+                          ? 'text-[#c084fc]'
+                          : hud.zone.id === 'level2'
+                            ? 'text-[#7be0ff]'
+                            : 'text-[#9db4cb]'
                 }`}
               />
               <div className="leading-tight">
-                <div
-                  data-testid="zone-indicator-badge"
-                  className="text-[9px] sm:text-[10px] uppercase tracking-wider text-[#9db4cb]"
-                >
-                  {hud.zone.id === 'city'
-                    ? 'Cavern Sanctuary · Frostcave City'
-                    : `Level ${hud.zone.levelNumber} · ${hud.zone.name}`}
+                <div className="flex items-center gap-1.5">
+                  <span
+                    data-testid="zone-indicator-badge"
+                    className="text-[9px] sm:text-[10px] uppercase tracking-wider text-[#9db4cb]"
+                  >
+                    {hud.zone.id === 'city'
+                      ? 'Cavern Sanctuary · Frostcave City'
+                      : `Level ${hud.zone.levelNumber} · ${hud.zone.name}`}
+                  </span>
+                  <span
+                    data-testid="zone-difficulty-badge"
+                    className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider tabular-nums ${
+                      hud.zone.id === 'city'
+                        ? 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/50'
+                        : hud.zone.difficultyMult >= 27
+                          ? 'bg-[#450a0a] text-[#fecaca] border border-[#f87171]/60'
+                          : hud.zone.difficultyMult >= 9
+                            ? 'bg-[#3b0764] text-[#f3e8ff] border border-[#c084fc]/60'
+                            : hud.zone.difficultyMult >= 3
+                              ? 'bg-[#0c4a6e] text-[#e0f2fe] border border-[#38bdf8]/60'
+                              : 'bg-[#1e293b] text-[#cbd5e1] border border-[#64748b]/50'
+                    }`}
+                  >
+                    {hud.zone.id === 'city' ? 'Safe Sanctuary' : `${hud.zone.difficultyMult}x Toughness`}
+                  </span>
                 </div>
                 <div className="text-[10px] sm:text-[11px] font-bold tabular-nums text-[#dce6f2]">
                   {hud.zone.id === 'city'
                     ? `West Gate ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Bazaar [T]`
-                    : hud.zone.id === 'level2'
-                      ? `Return ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · +45% Yield`
-                      : `L2 ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · City ${hud.zone.cityPortalDistance ?? 68}m ${hud.zone.cityPortalDirection ?? 'E'}`}
+                    : hud.zone.id === 'level1'
+                      ? `L2 ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · City ${hud.zone.cityPortalDistance ?? 144}m ${hud.zone.cityPortalDirection ?? 'E'}`
+                      : hud.zone.forwardPortalDistance !== undefined
+                        ? `Ret ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Next L${hud.zone.levelNumber + 1} ${hud.zone.forwardPortalDistance}m ${hud.zone.forwardPortalDirection}`
+                        : `Return ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · +${Math.round((hud.zone.yieldMult - 1) * 100)}% Yield`}
                 </div>
               </div>
             </div>
 
             <div
               data-testid="day-night-status"
-              className={`hidden xl:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
+              className={`hidden 2xl:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
                 hud.dayNight.phase === 'night'
                   ? 'bg-[#121e33]/95 border-[#7ea8eb]/60'
                   : hud.dayNight.phase === 'dusk' || hud.dayNight.phase === 'dawn'
@@ -1461,7 +1653,7 @@ export function GameHud({
               </div>
             </div>
 
-            <div className="hidden xl:flex flex-col items-end px-2.5 py-1.5 rounded-lg bg-[#162336]/90 border border-[#6e8eb0]/45 shadow-[0_4px_14px_rgba(8,14,24,0.45)]">
+            <div className="hidden 2xl:flex flex-col items-end px-2.5 py-1.5 rounded-lg bg-[#162336]/90 border border-[#6e8eb0]/45 shadow-[0_4px_14px_rgba(8,14,24,0.45)]">
               <div className="text-[10px] uppercase tracking-wider text-[#9db4cb]">
                 {cabinSpec.name}
               </div>
@@ -1515,14 +1707,57 @@ export function GameHud({
           </div>
 
           {!drawerOpen && (
-            <MinimapOverlay
-              zone={hud.zone}
-              wildlifeBlips={hud.wildlifeBlips}
-              hunterBlips={hud.hunterBlips}
-              chestBlips={hud.chestBlips}
-              bossBlip={hud.bossBlip}
-              sightActive={hud.huntersSight.active}
-            />
+            <div className="flex flex-col items-end gap-1.5">
+              {/* 6-Zone Expedition Selector Bar (1x -> 3x -> 9x -> 27x -> 81x + City) */}
+              <div
+                data-testid="zone-travel-bar"
+                className="pointer-events-auto flex flex-wrap items-center justify-end gap-1 rounded-lg bg-[#121f31]/94 border border-[#6e8eb0]/45 px-1.5 py-1 shadow-[0_4px_14px_rgba(8,14,24,0.48)]"
+              >
+                {(
+                  [
+                    { id: 'level1' as ZoneId, label: 'L1 · 1x', title: 'Level 1: Frostwood Valley (1x Difficulty)' },
+                    { id: 'level2' as ZoneId, label: 'L2 · 3x', title: 'Level 2: Glacial Highlands (3x Difficulty)' },
+                    { id: 'level3' as ZoneId, label: 'L3 · 9x', title: 'Level 3: Rimefang Abyss (9x Difficulty)' },
+                    { id: 'level4' as ZoneId, label: 'L4 · 27x', title: 'Level 4: Obsidian Permafrost (27x Difficulty)' },
+                    { id: 'level5' as ZoneId, label: 'L5 · 81x', title: 'Level 5: Starfall Eternal Zero (81x Difficulty)' },
+                    { id: 'city' as ZoneId, label: 'City', title: 'Frostcave City: Cavern Sanctuary' },
+                  ]
+                ).map((item) => {
+                  const active = hud.zone.id === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      tabIndex={-1}
+                      data-testid={`zone-travel-${item.id}`}
+                      title={item.title}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        if (!active) onSelectZone(item.id);
+                      }}
+                      className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-tight tabular-nums cursor-pointer transition-colors ${
+                        active
+                          ? item.id === 'city'
+                            ? 'bg-[#d98a2b] text-[#131d2b] border border-[#ffe394]'
+                            : 'bg-[#194766] text-[#e0faff] border border-[#7be0ff]'
+                          : 'bg-[#1a2b42]/85 hover:bg-[#243b59] text-[#b8cbe0] border border-[#6e8eb0]/35'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <MinimapOverlay
+                zone={hud.zone}
+                wildlifeBlips={hud.wildlifeBlips}
+                hunterBlips={hud.hunterBlips}
+                chestBlips={hud.chestBlips}
+                bossBlip={hud.bossBlip}
+                sightActive={hud.huntersSight.active}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -1545,9 +1780,9 @@ export function GameHud({
                     : 'bg-[#221d16]/95 border-[#f59e0b]/85'
           }`}
         >
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 min-w-0">
             <span
-              className={`inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider ${
+              className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider truncate min-w-0 ${
                 hud.bossNear.state === 'ko'
                   ? 'text-[#94a3b8]'
                   : hud.bossNear.enraged
@@ -1558,15 +1793,27 @@ export function GameHud({
               }`}
             >
               <Skull className="w-3.5 h-3.5 shrink-0" />
-              {hud.bossNear.state === 'ko'
-                ? 'Boss Defeated'
-                : hud.bossNear.enraged
-                  ? 'Phase II · Enraged'
-                  : `Phase I · ${hud.bossNear.title}`}
+              <span className="truncate">
+                {hud.bossNear.state === 'ko'
+                  ? 'Boss Defeated'
+                  : hud.bossNear.enraged
+                    ? 'Phase II · Enraged'
+                    : `Phase I · ${hud.bossNear.title}`}
+              </span>
             </span>
-            <span className="text-[11px] font-bold tabular-nums text-[#e2e8f0] shrink-0">
-              {hud.bossNear.distance}m {hud.bossNear.direction}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {hud.bossNear.tacticLabel && (
+                <span
+                  data-testid="zone-boss-tactic"
+                  className="px-1.5 py-0.5 rounded bg-[#152234]/95 border border-[#7be0ff]/55 text-[9px] font-extrabold uppercase tracking-wider text-[#bae6fd] max-w-[148px] truncate"
+                >
+                  {hud.bossNear.tacticLabel}
+                </span>
+              )}
+              <span className="text-[11px] font-bold tabular-nums text-[#e2e8f0] shrink-0">
+                {hud.bossNear.distance}m {hud.bossNear.direction}
+              </span>
+            </div>
           </div>
 
           <div className="mt-0.5 flex items-baseline justify-between gap-2">
@@ -1642,7 +1889,8 @@ export function GameHud({
             {hud.toastText ?? hud.contextHint}
           </div>
         )}
-        {!drawerOpen && (hud.zone.nearPortal || hud.zone.nearCityPortal) && (
+        {!drawerOpen &&
+          (hud.zone.nearPortal || hud.zone.nearForwardPortal || hud.zone.nearCityPortal) && (
           <button
             type="button"
             tabIndex={-1}
@@ -1654,19 +1902,25 @@ export function GameHud({
             className={`pointer-events-auto px-4 py-2 rounded-lg border text-xs sm:text-sm font-bold tracking-wide cursor-pointer transition-colors shadow-[0_6px_18px_rgba(8,14,24,0.6)] ${
               hud.zone.nearCityPortal
                 ? 'bg-[#362814]/95 hover:bg-[#4b381d] border-[#f6c344]/85 text-[#ffe8a3]'
-                : hud.zone.id === 'level1'
+                : hud.zone.nearForwardPortal || hud.zone.id === 'level1'
                   ? 'bg-[#11334a]/95 hover:bg-[#194766] border-[#7be0ff]/80 text-[#c9f4ff]'
                   : 'bg-[#362814]/95 hover:bg-[#4b381d] border-[#f6c344]/80 text-[#ffe8a3]'
             }`}
           >
             {hud.zone.nearCityPortal
               ? 'Enter Frostcave City · Merchant Cavern [E]'
-              : hud.zone.id === 'level1'
-                ? 'Enter Level 2 · Glacial Highlands [E]'
-                : 'Return to Level 1 · Frostwood Valley [E]'}
+              : hud.zone.nearForwardPortal && hud.zone.forwardZoneName
+                ? `Enter ${hud.zone.forwardZoneName} [E]`
+                : hud.zone.id === 'level1'
+                  ? 'Enter Level 2 · Glacial Highlands [E]'
+                  : `Return to ${hud.zone.returnZoneName ?? 'Previous Zone'} [E]`}
           </button>
         )}
-        {!drawerOpen && !hud.zone.nearPortal && !hud.zone.nearCityPortal && hud.nearCityQuestNpc && (
+        {!drawerOpen &&
+          !hud.zone.nearPortal &&
+          !hud.zone.nearForwardPortal &&
+          !hud.zone.nearCityPortal &&
+          hud.nearCityQuestNpc && (
           <button
             type="button"
             tabIndex={-1}
@@ -1681,7 +1935,12 @@ export function GameHud({
             Speak with {CITY_QUEST_NPC.name} · Daily Quest &amp; Wings of Fire [E]
           </button>
         )}
-        {!drawerOpen && !hud.zone.nearPortal && !hud.zone.nearCityPortal && !hud.nearCityQuestNpc && hud.nearCityTrader && (
+        {!drawerOpen &&
+          !hud.zone.nearPortal &&
+          !hud.zone.nearForwardPortal &&
+          !hud.zone.nearCityPortal &&
+          !hud.nearCityQuestNpc &&
+          hud.nearCityTrader && (
           <button
             type="button"
             tabIndex={-1}

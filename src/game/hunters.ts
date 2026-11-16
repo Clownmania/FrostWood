@@ -162,7 +162,16 @@ export function pickRivalHunterArchetype(
   dayNumber: number,
   rng = Math.random,
 ): RivalHunterArchetypeSpec {
-  const rareZoneScale = zone === 'level2' ? 1.35 : 1.0;
+  const rareZoneScale =
+    zone === 'level5'
+      ? 3.2
+      : zone === 'level4'
+        ? 2.4
+        : zone === 'level3'
+          ? 1.85
+          : zone === 'level2'
+            ? 1.35
+            : 1.0;
   const rareRoll = rng();
   let cumulativeRare = 0;
   for (const rareId of RARE_ENEMY_ARCHETYPES) {
@@ -173,6 +182,17 @@ export function pickRivalHunterArchetype(
     }
   }
 
+  if (zone === 'level5' || zone === 'level4') {
+    const r = rng();
+    if (r < 0.35) return RIVAL_HUNTER_ARCHETYPES.frost_berserker;
+    if (r < 0.65) return RIVAL_HUNTER_ARCHETYPES.aurora_warlock;
+    return RIVAL_HUNTER_ARCHETYPES.shadow_stalker;
+  }
+  if (zone === 'level3') {
+    return rng() < 0.72
+      ? RIVAL_HUNTER_ARCHETYPES.shadow_stalker
+      : RIVAL_HUNTER_ARCHETYPES.frost_berserker;
+  }
   if (zone === 'level2') {
     return rng() < 0.55
       ? RIVAL_HUNTER_ARCHETYPES.shadow_stalker
@@ -195,7 +215,16 @@ export function rollRareEnemyAmbush(
   rng = Math.random,
 ): RivalHunterArchetypeSpec | null {
   if (activeRareCount > 0 || zone === 'city') return null;
-  const zoneScale = zone === 'level2' ? 1.45 : 1.0;
+  const zoneScale =
+    zone === 'level5'
+      ? 3.35
+      : zone === 'level4'
+        ? 2.55
+        : zone === 'level3'
+          ? 1.95
+          : zone === 'level2'
+            ? 1.45
+            : 1.0;
   const r = rng();
   let cumulative = 0;
   for (const rareId of RARE_ENEMY_ARCHETYPES) {
@@ -218,22 +247,22 @@ export function pickRivalHunterSpawnPoint(
   rng = Math.random,
 ): { x: number; z: number } {
   const spec = ZONE_SPECS[zone];
-  const minFromCenter = Math.max(spec.clearingRadius + 14, 28);
-  const maxFromCenter = Math.max(minFromCenter + 12, spec.radius - 14);
+  const minFromCenter = Math.max(spec.clearingRadius + 18, 34);
+  const maxFromCenter = Math.max(minFromCenter + 16, spec.radius - 16);
 
-  for (let attempt = 0; attempt < 16; attempt++) {
+  for (let attempt = 0; attempt < 18; attempt++) {
     const angle = rng() * Math.PI * 2;
     const dist = minFromCenter + rng() * (maxFromCenter - minFromCenter);
     const x = spec.centerX + Math.cos(angle) * dist;
     const z = spec.centerZ + Math.sin(angle) * dist;
     const distToPlayer = Math.hypot(x - playerX, z - playerZ);
-    if (distToPlayer >= 22 && distToPlayer <= 58) {
+    if (distToPlayer >= 26 && distToPlayer <= 84) {
       return { x, z };
     }
   }
 
   const fallbackAngle = rng() * Math.PI * 2;
-  const fallbackDist = Math.min(maxFromCenter, minFromCenter + 18);
+  const fallbackDist = Math.min(maxFromCenter, minFromCenter + 24);
   return {
     x: spec.centerX + Math.cos(fallbackAngle) * fallbackDist,
     z: spec.centerZ + Math.sin(fallbackAngle) * fallbackDist,

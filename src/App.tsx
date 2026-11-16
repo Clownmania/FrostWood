@@ -157,6 +157,7 @@ const DEFAULT_HUD: HudSnapshot = {
       magnetRadiusBonus: 0,
     },
   },
+  chatLogs: [],
   toastText: null,
 };
 
@@ -263,7 +264,14 @@ export default function App() {
     const initialSkillsReady = params.get('skills') === '1';
     const zParam = params.get('zone');
     const initialZone: ZoneId | null =
-      zParam === 'level1' || zParam === 'level2' || zParam === 'city' ? zParam : null;
+      zParam === 'level1' ||
+      zParam === 'level2' ||
+      zParam === 'level3' ||
+      zParam === 'level4' ||
+      zParam === 'level5' ||
+      zParam === 'city'
+        ? zParam
+        : null;
     const initialPortalNear = params.get('portal') === '1';
     const gParam = params.get('gear');
     const gNum = Number(gParam);
@@ -448,6 +456,10 @@ export default function App() {
     engineRef.current?.activatePortal();
   }, []);
 
+  const handleSelectZone = useCallback((targetZone: ZoneId) => {
+    engineRef.current?.travelToZone(targetZone);
+  }, []);
+
   const handleActivateHuntersSight = useCallback(() => {
     engineRef.current?.activateHuntersSight();
   }, []);
@@ -524,6 +536,7 @@ export default function App() {
           onToggleMute={handleToggleMute}
           onPause={handlePause}
           onUsePortal={handleUsePortal}
+          onSelectZone={handleSelectZone}
           onActivateHuntersSight={handleActivateHuntersSight}
           onInspectTrack={handleInspectTrack}
           onFeedWildPet={handleFeedWildPet}

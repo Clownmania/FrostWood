@@ -87,9 +87,13 @@ import {
   ZONE_BOSS_ORDER,
   ZONE_BOSS_SPECS,
   computeArenaContainment,
+  computeBossKinematicPose,
   computeBossLootReward,
+  computeBossTacticalMovement,
+  getZoneBossSpec,
   isBossEnraged,
   rollMeteorTargets,
+  rollTacticalAoEPatternPoints,
   selectNextBossAttack,
 } from './bosses';
 import {
@@ -227,6 +231,8 @@ import type {
   BackpackInventoryMap,
   BestiaryMap,
   BuildingId,
+  ChatLogCategory,
+  ChatLogEntry,
   CityDailyQuestState,
   CityTraderId,
   CraftItemId,
@@ -238,6 +244,7 @@ import type {
   GearSlotId,
   HudSnapshot,
   HuntersSightState,
+  ItemRarity,
   LastLootRollHudInfo,
   LootDroppedItem,
   MinimapBossBlip,
@@ -567,6 +574,10 @@ interface ZoneBossEntity {
   respawnTimer: number;
   flashTimer: number;
   walkPhase: number;
+  strafeSign: -1 | 1;
+  strafeFlipTimer: number;
+  strideSpeed: number;
+  tacticLabel: string;
   model: ZoneBossModel;
 }
 
@@ -644,15 +655,30 @@ export class FrostwoodEngine {
   private readonly palette;
   private readonly level1Group = new THREE.Group();
   private readonly level2Group = new THREE.Group();
+  private readonly level3Group = new THREE.Group();
+  private readonly level4Group = new THREE.Group();
+  private readonly level5Group = new THREE.Group();
   private readonly cityGroup = new THREE.Group();
   private readonly worldGroup: THREE.Group;
   private readonly level2WorldGroup: THREE.Group;
+  private readonly level3WorldGroup: THREE.Group;
+  private readonly level4WorldGroup: THREE.Group;
+  private readonly level5WorldGroup: THREE.Group;
   private readonly cityWorldGroup: THREE.Group;
   private readonly portal1: PortalVisual;
   private readonly portal2: PortalVisual;
+  private readonly portal2Forward: PortalVisual;
+  private readonly portal3Return: PortalVisual;
+  private readonly portal3Forward: PortalVisual;
+  private readonly portal4Return: PortalVisual;
+  private readonly portal4Forward: PortalVisual;
+  private readonly portal5Return: PortalVisual;
   private readonly cityPortal1: PortalVisual;
   private readonly cityPortal2: PortalVisual;
   private readonly waystationBrazier: WaystationBrazierVisual;
+  private readonly waystationBrazier3: WaystationBrazierVisual;
+  private readonly waystationBrazier4: WaystationBrazierVisual;
+  private readonly waystationBrazier5: WaystationBrazierVisual;
   private readonly cityStalls: CityStallVisual[] = [];
   private readonly cityTraderRigs: Array<{
     id: CityTraderId;
@@ -818,6 +844,8 @@ export class FrostwoodEngine {
   private stormShelter: StormShelterState = createInitialStormShelterState(0);
   private initialShelterOverride = false;
   private activeBuffs: ActiveCraftBuffs = { ...INITIAL_BUFFS };
+  private chatLogs: ChatLogEntry[] = [];
+  private nextChatLogId = 1;
   private toastText: string | null = null;
   private toastTimer = 0;
 
@@ -976,7 +1004,7 @@ export class FrostwoodEngine {
     this.scene.fog = this.sceneFog;
 
     const aspect = (mountEl.clientWidth || window.innerWidth) / (mountEl.clientHeight || window.innerHeight);
-    this.camera = new THREE.PerspectiveCamera(48, aspect, 0.2, 220);
+    this.camera = new THREE.PerspectiveCamera(48, aspect, 0.2, 240);
     this.camera.position.set(16, 13, 18);
     this.camera.lookAt(0, 1.5, 0);
 
@@ -1012,11 +1040,21 @@ export class FrostwoodEngine {
     this.textures = createProceduralTextures(maxAniso);
     this.palette = createMaterialPalette(this.textures);
 
-    this.scene.add(this.level1Group, this.level2Group, this.cityGroup);
+    this.scene.add(
+      this.level1Group,
+      this.level2Group,
+      this.level3Group,
+      this.level4Group,
+      this.level5Group,
+      this.cityGroup,
+    );
     this.level2Group.visible = false;
+    this.level3Group.visible = false;
+    this.level4Group.visible = false;
+    this.level5Group.visible = false;
     this.cityGroup.visible = false;
 
-    // Level 1: Frostwood Valley
+    // Level 1: Frostwood Valley (1x Difficulty)
     this.worldGroup = createZoneTerrain('level1', this.textures, this.palette);
     this.level1Group.add(this.worldGroup);
 
@@ -1049,7 +1087,7 @@ export class FrostwoodEngine {
     this.cityPortal1.group.rotation.y = -Math.PI / 2;
     this.level1Group.add(this.cityPortal1.group);
 
-    // Level 2: Glacial Highlands (North Side)
+    // Level 2: Glacial Highlands (3x Difficulty)
     this.level2WorldGroup = createZoneTerrain('level2', this.textures, this.palette);
     this.level2Group.add(this.level2WorldGroup);
 
@@ -1063,6 +1101,15 @@ export class FrostwoodEngine {
     this.portal2.group.rotation.y = spec2.portalFacingYaw;
     this.level2Group.add(this.portal2.group);
 
+    this.portal2Forward = createPortalModel('to_level2', this.palette);
+    this.portal2Forward.group.position.set(
+      spec2.forwardPortalX ?? spec2.portalX,
+      groundHeightAt(spec2.forwardPortalX ?? spec2.portalX, spec2.forwardPortalZ ?? spec2.portalZ),
+      spec2.forwardPortalZ ?? spec2.portalZ,
+    );
+    this.portal2Forward.group.rotation.y = spec2.forwardPortalFacingYaw ?? Math.PI / 2;
+    this.level2Group.add(this.portal2Forward.group);
+
     this.waystationBrazier = createWaystationBrazierModel(this.palette);
     this.waystationBrazier.flames.rotation.order = 'YXZ';
     this.waystationBrazier.group.position.set(
@@ -1072,7 +1119,94 @@ export class FrostwoodEngine {
     );
     this.level2Group.add(this.waystationBrazier.group);
 
-    // Level 3: Frostcave City (East Subterranean Cavern City)
+    // Level 3: Rimefang Abyss (9x Difficulty)
+    this.level3WorldGroup = createZoneTerrain('level3', this.textures, this.palette);
+    this.level3Group.add(this.level3WorldGroup);
+
+    const spec3 = ZONE_SPECS.level3;
+    this.portal3Return = createPortalModel('to_level1', this.palette);
+    this.portal3Return.group.position.set(
+      spec3.portalX,
+      groundHeightAt(spec3.portalX, spec3.portalZ),
+      spec3.portalZ,
+    );
+    this.portal3Return.group.rotation.y = spec3.portalFacingYaw;
+    this.level3Group.add(this.portal3Return.group);
+
+    this.portal3Forward = createPortalModel('to_level2', this.palette);
+    this.portal3Forward.group.position.set(
+      spec3.forwardPortalX ?? spec3.portalX,
+      groundHeightAt(spec3.forwardPortalX ?? spec3.portalX, spec3.forwardPortalZ ?? spec3.portalZ),
+      spec3.forwardPortalZ ?? spec3.portalZ,
+    );
+    this.portal3Forward.group.rotation.y = spec3.forwardPortalFacingYaw ?? Math.PI;
+    this.level3Group.add(this.portal3Forward.group);
+
+    this.waystationBrazier3 = createWaystationBrazierModel(this.palette);
+    this.waystationBrazier3.flames.rotation.order = 'YXZ';
+    this.waystationBrazier3.group.position.set(
+      spec3.hearthX,
+      groundHeightAt(spec3.hearthX, spec3.hearthZ),
+      spec3.hearthZ,
+    );
+    this.level3Group.add(this.waystationBrazier3.group);
+
+    // Level 4: Obsidian Permafrost (27x Difficulty)
+    this.level4WorldGroup = createZoneTerrain('level4', this.textures, this.palette);
+    this.level4Group.add(this.level4WorldGroup);
+
+    const spec4 = ZONE_SPECS.level4;
+    this.portal4Return = createPortalModel('to_level1', this.palette);
+    this.portal4Return.group.position.set(
+      spec4.portalX,
+      groundHeightAt(spec4.portalX, spec4.portalZ),
+      spec4.portalZ,
+    );
+    this.portal4Return.group.rotation.y = spec4.portalFacingYaw;
+    this.level4Group.add(this.portal4Return.group);
+
+    this.portal4Forward = createPortalModel('to_level2', this.palette);
+    this.portal4Forward.group.position.set(
+      spec4.forwardPortalX ?? spec4.portalX,
+      groundHeightAt(spec4.forwardPortalX ?? spec4.portalX, spec4.forwardPortalZ ?? spec4.portalZ),
+      spec4.forwardPortalZ ?? spec4.portalZ,
+    );
+    this.portal4Forward.group.rotation.y = spec4.forwardPortalFacingYaw ?? -Math.PI / 2;
+    this.level4Group.add(this.portal4Forward.group);
+
+    this.waystationBrazier4 = createWaystationBrazierModel(this.palette);
+    this.waystationBrazier4.flames.rotation.order = 'YXZ';
+    this.waystationBrazier4.group.position.set(
+      spec4.hearthX,
+      groundHeightAt(spec4.hearthX, spec4.hearthZ),
+      spec4.hearthZ,
+    );
+    this.level4Group.add(this.waystationBrazier4.group);
+
+    // Level 5: Starfall Eternal Zero (81x Difficulty)
+    this.level5WorldGroup = createZoneTerrain('level5', this.textures, this.palette);
+    this.level5Group.add(this.level5WorldGroup);
+
+    const spec5 = ZONE_SPECS.level5;
+    this.portal5Return = createPortalModel('to_level1', this.palette);
+    this.portal5Return.group.position.set(
+      spec5.portalX,
+      groundHeightAt(spec5.portalX, spec5.portalZ),
+      spec5.portalZ,
+    );
+    this.portal5Return.group.rotation.y = spec5.portalFacingYaw;
+    this.level5Group.add(this.portal5Return.group);
+
+    this.waystationBrazier5 = createWaystationBrazierModel(this.palette);
+    this.waystationBrazier5.flames.rotation.order = 'YXZ';
+    this.waystationBrazier5.group.position.set(
+      spec5.hearthX,
+      groundHeightAt(spec5.hearthX, spec5.hearthZ),
+      spec5.hearthZ,
+    );
+    this.level5Group.add(this.waystationBrazier5.group);
+
+    // Frostcave City (East Subterranean Cavern City)
     this.cityWorldGroup = createZoneTerrain('city', this.textures, this.palette);
     this.cityGroup.add(this.cityWorldGroup);
 
@@ -1140,6 +1274,9 @@ export class FrostwoodEngine {
 
   private getZoneGroup(zone: ZoneId): THREE.Group {
     if (zone === 'level2') return this.level2Group;
+    if (zone === 'level3') return this.level3Group;
+    if (zone === 'level4') return this.level4Group;
+    if (zone === 'level5') return this.level5Group;
     if (zone === 'city') return this.cityGroup;
     return this.level1Group;
   }
@@ -1149,31 +1286,32 @@ export class FrostwoodEngine {
     const spec1 = ZONE_SPECS.level1;
     let nextTreeId = 0;
 
-    // Level 1: Expanded Frostwood Valley forest (84 trees)
-    for (let i = 0; i < 84; i++) {
+    // Level 1: Expanded Frostwood Valley forest (96 trees across radius 156)
+    const count1 = 96;
+    for (let i = 0; i < count1; i++) {
       const angle = i * 2.39996 + 0.4;
-      const ringT = (i + 1) / 84;
-      let dist = spec1.clearingRadius + ringT * (spec1.radius - spec1.clearingRadius - 3.5);
+      const ringT = (i + 1) / count1;
+      let dist = spec1.clearingRadius + ringT * (spec1.radius - spec1.clearingRadius - 4.0);
       let x = Math.cos(angle) * dist;
       let z = Math.sin(angle) * dist;
       const boss1 = ZONE_BOSS_SPECS.skarn_colossus;
       while (
-        dist < spec1.radius - 3.5 &&
+        dist < spec1.radius - 4.0 &&
         (buildingCoords.some((bp) => Math.hypot(bp.x - x, bp.z - z) < 5.4) ||
-          (Math.abs(x) < 4.2 && z < -8 && z > -75) ||
-          (Math.abs(z) < 4.4 && x > 8 && x < 75) ||
-          Math.hypot(x - spec1.portalX, z - spec1.portalZ) < 7.5 ||
-          Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z) < 7.5 ||
-          Math.hypot(x - boss1.arenaX, z - boss1.arenaZ) < 14.5)
+          (Math.abs(x) < 4.5 && z < -8 && z > -104) ||
+          (Math.abs(z) < 4.5 && x > 8 && x < 104) ||
+          Math.hypot(x - spec1.portalX, z - spec1.portalZ) < 8.5 ||
+          Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z) < 8.5 ||
+          Math.hypot(x - boss1.arenaX, z - boss1.arenaZ) < 15.5)
       ) {
-        dist += 2.6;
+        dist += 3.0;
         x = Math.cos(angle) * dist;
         z = Math.sin(angle) * dist;
       }
       if (
-        Math.hypot(x - spec1.portalX, z - spec1.portalZ) < 7.2 ||
-        Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z) < 7.2 ||
-        Math.hypot(x - boss1.arenaX, z - boss1.arenaZ) < 14.2
+        Math.hypot(x - spec1.portalX, z - spec1.portalZ) < 8.0 ||
+        Math.hypot(x - LEVEL1_CITY_PORTAL_X, z - LEVEL1_CITY_PORTAL_Z) < 8.0 ||
+        Math.hypot(x - boss1.arenaX, z - boss1.arenaZ) < 15.0
       ) {
         continue;
       }
@@ -1205,59 +1343,76 @@ export class FrostwoodEngine {
       });
     }
 
-    // Level 2: Glacial Highlands elder/spruce groves (72 trees around z = -240)
-    const spec2 = ZONE_SPECS.level2;
-    for (let i = 0; i < 72; i++) {
-      const angle = i * 2.39996 + 0.9;
-      const ringT = (i + 1) / 72;
-      let dist = spec2.clearingRadius + ringT * (spec2.radius - spec2.clearingRadius - 3.5);
-      let x = spec2.centerX + Math.cos(angle) * dist;
-      let z = spec2.centerZ + Math.sin(angle) * dist;
-      const boss2 = ZONE_BOSS_SPECS.veyra_sovereign;
-      while (
-        dist < spec2.radius - 3.5 &&
-        (Math.hypot(x - spec2.portalX, z - spec2.portalZ) < 8.6 ||
-          Math.hypot(x - spec2.hearthX, z - spec2.hearthZ) < 8.6 ||
-          Math.hypot(x - boss2.arenaX, z - boss2.arenaZ) < 14.5 ||
-          (Math.abs(x) < 4.4 && z <= -174 && z >= -193))
-      ) {
-        dist += 2.6;
-        x = spec2.centerX + Math.cos(angle) * dist;
-        z = spec2.centerZ + Math.sin(angle) * dist;
-      }
-      if (
-        Math.hypot(x - spec2.portalX, z - spec2.portalZ) < 8.2 ||
-        Math.hypot(x - spec2.hearthX, z - spec2.hearthZ) < 8.2 ||
-        Math.hypot(x - boss2.arenaX, z - boss2.arenaZ) < 14.2
-      ) {
-        continue;
-      }
+    // Populate Wilderness Zones 2, 3, 4, 5 (76 trees each across their expanded radii)
+    const highZones: Array<'level2' | 'level3' | 'level4' | 'level5'> = [
+      'level2',
+      'level3',
+      'level4',
+      'level5',
+    ];
+    for (const hz of highZones) {
+      const zSpec = ZONE_SPECS[hz];
+      const zBoss = getZoneBossSpec(hz);
+      const treeCount = 76;
+      const zoneGroup = this.getZoneGroup(hz);
+      for (let i = 0; i < treeCount; i++) {
+        const angle = i * 2.39996 + 0.9;
+        const ringT = (i + 1) / treeCount;
+        let dist = zSpec.clearingRadius + ringT * (zSpec.radius - zSpec.clearingRadius - 4.0);
+        let x = zSpec.centerX + Math.cos(angle) * dist;
+        let z = zSpec.centerZ + Math.sin(angle) * dist;
+        while (
+          dist < zSpec.radius - 4.0 &&
+          (Math.hypot(x - zSpec.portalX, z - zSpec.portalZ) < 9.0 ||
+            (zSpec.forwardPortalX !== undefined &&
+              zSpec.forwardPortalZ !== undefined &&
+              Math.hypot(x - zSpec.forwardPortalX, z - zSpec.forwardPortalZ) < 9.0) ||
+            Math.hypot(x - zSpec.hearthX, z - zSpec.hearthZ) < 9.0 ||
+            Math.hypot(x - zBoss.arenaX, z - zBoss.arenaZ) < 15.5)
+        ) {
+          dist += 3.0;
+          x = zSpec.centerX + Math.cos(angle) * dist;
+          z = zSpec.centerZ + Math.sin(angle) * dist;
+        }
+        if (
+          Math.hypot(x - zSpec.portalX, z - zSpec.portalZ) < 8.5 ||
+          (zSpec.forwardPortalX !== undefined &&
+            zSpec.forwardPortalZ !== undefined &&
+            Math.hypot(x - zSpec.forwardPortalX, z - zSpec.forwardPortalZ) < 8.5) ||
+          Math.hypot(x - zSpec.hearthX, z - zSpec.hearthZ) < 8.5 ||
+          Math.hypot(x - zBoss.arenaX, z - zBoss.arenaZ) < 15.0
+        ) {
+          continue;
+        }
 
-      const kind: TreeKind = i % 5 === 0 ? 'elder' : i % 2 === 0 ? 'spruce' : 'pine';
-      const mesh = createTreeModel(kind, this.palette);
-      const y = groundHeightAt(x, z);
-      mesh.position.set(x, y, z);
-      mesh.rotation.y = (i * 1.43) % (Math.PI * 2);
-      this.level2Group.add(mesh);
+        const kind: TreeKind = i % 4 === 0 ? 'elder' : i % 2 === 0 ? 'spruce' : 'pine';
+        const mesh = createTreeModel(kind, this.palette);
+        const y = groundHeightAt(x, z);
+        mesh.position.set(x, y, z);
+        mesh.rotation.y = (i * 1.43) % (Math.PI * 2);
+        zoneGroup.add(mesh);
 
-      const maxHp = kind === 'elder' ? 160 : kind === 'spruce' ? 100 : 80;
-      const woodYield = kind === 'elder' ? 12 : kind === 'spruce' ? 6 : 5;
-      this.trees.push({
-        id: nextTreeId++,
-        zone: 'level2',
-        kind,
-        x,
-        z,
-        y,
-        hp: maxHp,
-        maxHp,
-        woodYield,
-        respawnTimer: 0,
-        fallTimer: 0,
-        shakeTimer: 0,
-        flashTimer: 0,
-        mesh,
-      });
+        const hpScale = hz === 'level5' ? 1.6 : hz === 'level4' ? 1.4 : hz === 'level3' ? 1.2 : 1.0;
+        const baseHp = kind === 'elder' ? 160 : kind === 'spruce' ? 100 : 80;
+        const maxHp = Math.round(baseHp * hpScale);
+        const woodYield = Math.round((kind === 'elder' ? 12 : kind === 'spruce' ? 6 : 5) * zSpec.yieldMult);
+        this.trees.push({
+          id: nextTreeId++,
+          zone: hz,
+          kind,
+          x,
+          z,
+          y,
+          hp: maxHp,
+          maxHp,
+          woodYield,
+          respawnTimer: 0,
+          fallTimer: 0,
+          shakeTimer: 0,
+          flashTimer: 0,
+          mesh,
+        });
+      }
     }
   }
 
@@ -1266,28 +1421,28 @@ export class FrostwoodEngine {
     const spec1 = ZONE_SPECS.level1;
     let nextId = 0;
 
-    // Level 1 boulders (24)
-    const count1 = 24;
+    // Level 1 boulders (28 across expanded radius)
+    const count1 = 28;
     for (let i = 0; i < count1; i++) {
       const baseAngle = i * ((Math.PI * 2) / count1) + 0.35;
-      const dist = 16.5 + (i % 5) * 12.2;
+      const dist = 20.5 + (i % 6) * 20.5;
 
       let bx = Math.cos(baseAngle) * dist;
       let bz = Math.sin(baseAngle) * dist;
       for (let attempt = 0; attempt < 16; attempt++) {
         const a = baseAngle + attempt * 0.19;
-        const r = Math.min(spec1.radius - 4, dist + (attempt % 3) * 1.8);
+        const r = Math.min(spec1.radius - 6, dist + (attempt % 3) * 2.4);
         const cx = Math.cos(a) * r;
         const cz = Math.sin(a) * r;
         const nearBuilding = buildingCoords.some(
           (bp) => Math.hypot(bp.x - cx, bp.z - cz) < 5.0,
         );
         const nearRoadOrPortal =
-          (Math.abs(cx) < 4.4 && cz < -8 && cz > -75) ||
-          (Math.abs(cz) < 4.6 && cx > 8 && cx < 75) ||
-          Math.hypot(cx - spec1.portalX, cz - spec1.portalZ) < 7.5 ||
-          Math.hypot(cx - LEVEL1_CITY_PORTAL_X, cz - LEVEL1_CITY_PORTAL_Z) < 7.5 ||
-          Math.hypot(cx - ZONE_BOSS_SPECS.skarn_colossus.arenaX, cz - ZONE_BOSS_SPECS.skarn_colossus.arenaZ) < 14.0;
+          (Math.abs(cx) < 4.5 && cz < -8 && cz > -104) ||
+          (Math.abs(cz) < 4.6 && cx > 8 && cx < 104) ||
+          Math.hypot(cx - spec1.portalX, cz - spec1.portalZ) < 8.5 ||
+          Math.hypot(cx - LEVEL1_CITY_PORTAL_X, cz - LEVEL1_CITY_PORTAL_Z) < 8.5 ||
+          Math.hypot(cx - ZONE_BOSS_SPECS.skarn_colossus.arenaX, cz - ZONE_BOSS_SPECS.skarn_colossus.arenaZ) < 15.0;
         const nearTree = this.trees.some(
           (t) => t.zone === 'level1' && Math.hypot(t.x - cx, t.z - cz) < 2.8,
         );
@@ -1322,57 +1477,72 @@ export class FrostwoodEngine {
       });
     }
 
-    // Level 2 Glacial Boulders (22, richer stone + bonus ice on break)
-    const spec2 = ZONE_SPECS.level2;
-    const count2 = 22;
-    for (let i = 0; i < count2; i++) {
-      const baseAngle = i * ((Math.PI * 2) / count2) + 0.55;
-      const dist = 14.5 + (i % 5) * 11.4;
+    // Wilderness Zones 2, 3, 4, 5 Glacial Boulders (22 each)
+    const highZones: Array<'level2' | 'level3' | 'level4' | 'level5'> = [
+      'level2',
+      'level3',
+      'level4',
+      'level5',
+    ];
+    for (const hz of highZones) {
+      const zSpec = ZONE_SPECS[hz];
+      const zBoss = getZoneBossSpec(hz);
+      const zoneGroup = this.getZoneGroup(hz);
+      const count = 22;
+      for (let i = 0; i < count; i++) {
+        const baseAngle = i * ((Math.PI * 2) / count) + 0.55;
+        const dist = 18.5 + (i % 5) * 21.0;
 
-      let bx = spec2.centerX + Math.cos(baseAngle) * dist;
-      let bz = spec2.centerZ + Math.sin(baseAngle) * dist;
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const a = baseAngle + attempt * 0.21;
-        const r = Math.min(spec2.radius - 4, dist + (attempt % 3) * 1.8);
-        const cx = spec2.centerX + Math.cos(a) * r;
-        const cz = spec2.centerZ + Math.sin(a) * r;
-        const nearPlaza =
-          Math.hypot(cx - spec2.portalX, cz - spec2.portalZ) < 8.5 ||
-          Math.hypot(cx - spec2.hearthX, cz - spec2.hearthZ) < 8.5 ||
-          Math.hypot(cx - ZONE_BOSS_SPECS.veyra_sovereign.arenaX, cz - ZONE_BOSS_SPECS.veyra_sovereign.arenaZ) < 14.0;
-        const nearTree = this.trees.some(
-          (t) => t.zone === 'level2' && Math.hypot(t.x - cx, t.z - cz) < 2.8,
-        );
-        const nearBoulder = this.boulders.some(
-          (b) => b.zone === 'level2' && Math.hypot(b.x - cx, b.z - cz) < 3.5,
-        );
-        if (!nearPlaza && !nearTree && !nearBoulder) {
-          bx = cx;
-          bz = cz;
-          break;
+        let bx = zSpec.centerX + Math.cos(baseAngle) * dist;
+        let bz = zSpec.centerZ + Math.sin(baseAngle) * dist;
+        for (let attempt = 0; attempt < 16; attempt++) {
+          const a = baseAngle + attempt * 0.21;
+          const r = Math.min(zSpec.radius - 6, dist + (attempt % 3) * 2.2);
+          const cx = zSpec.centerX + Math.cos(a) * r;
+          const cz = zSpec.centerZ + Math.sin(a) * r;
+          const nearPlaza =
+            Math.hypot(cx - zSpec.portalX, cz - zSpec.portalZ) < 9.0 ||
+            (zSpec.forwardPortalX !== undefined &&
+              zSpec.forwardPortalZ !== undefined &&
+              Math.hypot(cx - zSpec.forwardPortalX, cz - zSpec.forwardPortalZ) < 9.0) ||
+            Math.hypot(cx - zSpec.hearthX, cz - zSpec.hearthZ) < 9.0 ||
+            Math.hypot(cx - zBoss.arenaX, cz - zBoss.arenaZ) < 15.0;
+          const nearTree = this.trees.some(
+            (t) => t.zone === hz && Math.hypot(t.x - cx, t.z - cz) < 2.8,
+          );
+          const nearBoulder = this.boulders.some(
+            (b) => b.zone === hz && Math.hypot(b.x - cx, b.z - cz) < 3.5,
+          );
+          if (!nearPlaza && !nearTree && !nearBoulder) {
+            bx = cx;
+            bz = cz;
+            break;
+          }
         }
+
+        const by = groundHeightAt(bx, bz);
+        const mesh = createBoulderModel(this.palette);
+        mesh.scale.setScalar(1.12);
+        mesh.position.set(bx, by, bz);
+        mesh.rotation.y = (i * 2.1) % (Math.PI * 2);
+        zoneGroup.add(mesh);
+
+        const maxHp = Math.round(95 * (hz === 'level5' ? 1.5 : hz === 'level4' ? 1.35 : hz === 'level3' ? 1.2 : 1.0));
+        const stoneYield = Math.max(5, Math.round(4 * zSpec.yieldMult));
+        this.boulders.push({
+          id: nextId++,
+          zone: hz,
+          x: bx,
+          z: bz,
+          y: by,
+          hp: maxHp,
+          maxHp,
+          stoneYield,
+          respawnTimer: 0,
+          shakeTimer: 0,
+          mesh,
+        });
       }
-
-      const by = groundHeightAt(bx, bz);
-      const mesh = createBoulderModel(this.palette);
-      mesh.scale.setScalar(1.12);
-      mesh.position.set(bx, by, bz);
-      mesh.rotation.y = (i * 2.1) % (Math.PI * 2);
-      this.level2Group.add(mesh);
-
-      this.boulders.push({
-        id: nextId++,
-        zone: 'level2',
-        x: bx,
-        z: bz,
-        y: by,
-        hp: 95,
-        maxHp: 95,
-        stoneYield: 5,
-        respawnTimer: 0,
-        shakeTimer: 0,
-        mesh,
-      });
     }
   }
 
@@ -1385,21 +1555,21 @@ export class FrostwoodEngine {
     const count1 = 10;
     for (let i = 0; i < count1; i++) {
       const baseAngle = i * ((Math.PI * 2) / count1) + 0.65;
-      const dist = 16.5 + (i % 4) * 13.5;
+      const dist = 22.5 + (i % 4) * 24.5;
 
       let ix = Math.cos(baseAngle) * dist;
       let iz = Math.sin(baseAngle) * dist;
       for (let attempt = 0; attempt < 16; attempt++) {
         const a = baseAngle + attempt * 0.18;
-        const r = Math.min(spec1.radius - 5, dist + (attempt % 2) * 1.8);
+        const r = Math.min(spec1.radius - 6, dist + (attempt % 2) * 2.2);
         const cx = Math.cos(a) * r;
         const cz = Math.sin(a) * r;
         const nearBuilding = buildingCoords.some(
           (bp) => Math.hypot(bp.x - cx, bp.z - cz) < 4.5,
         );
         const nearRoadOrPortal =
-          (Math.abs(cx) < 4.4 && cz < -8 && cz > -75) ||
-          Math.hypot(cx - spec1.portalX, cz - spec1.portalZ) < 7.5;
+          (Math.abs(cx) < 4.5 && cz < -8 && cz > -104) ||
+          Math.hypot(cx - spec1.portalX, cz - spec1.portalZ) < 8.5;
         const nearTree = this.trees.some(
           (t) => t.zone === 'level1' && Math.hypot(t.x - cx, t.z - cz) < 2.6,
         );
@@ -1436,57 +1606,66 @@ export class FrostwoodEngine {
       });
     }
 
-    // Level 2 glacial crystal sculptures (8)
-    const spec2 = ZONE_SPECS.level2;
-    const count2 = 8;
-    for (let i = 0; i < count2; i++) {
-      const baseAngle = i * ((Math.PI * 2) / count2) + 0.8;
-      const dist = 16.0 + (i % 3) * 14.0;
+    // Wilderness Zones 2, 3, 4, 5 glacial crystal sculptures (8 each)
+    const highZones: Array<'level2' | 'level3' | 'level4' | 'level5'> = [
+      'level2',
+      'level3',
+      'level4',
+      'level5',
+    ];
+    for (const hz of highZones) {
+      const zSpec = ZONE_SPECS[hz];
+      const zoneGroup = this.getZoneGroup(hz);
+      const count = 8;
+      for (let i = 0; i < count; i++) {
+        const baseAngle = i * ((Math.PI * 2) / count) + 0.8;
+        const dist = 20.0 + (i % 4) * 24.0;
 
-      let ix = spec2.centerX + Math.cos(baseAngle) * dist;
-      let iz = spec2.centerZ + Math.sin(baseAngle) * dist;
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const a = baseAngle + attempt * 0.2;
-        const r = Math.min(spec2.radius - 5, dist + (attempt % 2) * 1.8);
-        const cx = spec2.centerX + Math.cos(a) * r;
-        const cz = spec2.centerZ + Math.sin(a) * r;
-        const nearPlaza =
-          Math.hypot(cx - spec2.portalX, cz - spec2.portalZ) < 8.5 ||
-          Math.hypot(cx - spec2.hearthX, cz - spec2.hearthZ) < 8.5;
-        const nearTree = this.trees.some(
-          (t) => t.zone === 'level2' && Math.hypot(t.x - cx, t.z - cz) < 2.6,
-        );
-        const nearBoulder = this.boulders.some(
-          (b) => b.zone === 'level2' && Math.hypot(b.x - cx, b.z - cz) < 3.0,
-        );
-        if (!nearPlaza && !nearTree && !nearBoulder) {
-          ix = cx;
-          iz = cz;
-          break;
+        let ix = zSpec.centerX + Math.cos(baseAngle) * dist;
+        let iz = zSpec.centerZ + Math.sin(baseAngle) * dist;
+        for (let attempt = 0; attempt < 16; attempt++) {
+          const a = baseAngle + attempt * 0.2;
+          const r = Math.min(zSpec.radius - 6, dist + (attempt % 2) * 2.0);
+          const cx = zSpec.centerX + Math.cos(a) * r;
+          const cz = zSpec.centerZ + Math.sin(a) * r;
+          const nearPlaza =
+            Math.hypot(cx - zSpec.portalX, cz - zSpec.portalZ) < 8.5 ||
+            Math.hypot(cx - zSpec.hearthX, cz - zSpec.hearthZ) < 8.5;
+          const nearTree = this.trees.some(
+            (t) => t.zone === hz && Math.hypot(t.x - cx, t.z - cz) < 2.6,
+          );
+          const nearBoulder = this.boulders.some(
+            (b) => b.zone === hz && Math.hypot(b.x - cx, b.z - cz) < 3.0,
+          );
+          if (!nearPlaza && !nearTree && !nearBoulder) {
+            ix = cx;
+            iz = cz;
+            break;
+          }
         }
+
+        const iy = groundHeightAt(ix, iz);
+        const variant = ((i + 1) % 3) as 0 | 1 | 2;
+        const mesh = createWildIceSculptureModel(variant, this.palette);
+        mesh.position.set(ix, iy, iz);
+        mesh.rotation.y = (i * 1.7) % (Math.PI * 2);
+        mesh.visible = false;
+        zoneGroup.add(mesh);
+
+        this.iceSculptures.push({
+          id: nextId++,
+          zone: hz,
+          x: ix,
+          z: iz,
+          y: iy,
+          hp: 65,
+          maxHp: 65,
+          iceYield: Math.max(3, Math.round(2.5 * zSpec.yieldMult)),
+          respawnTimer: 0,
+          shakeTimer: 0,
+          mesh,
+        });
       }
-
-      const iy = groundHeightAt(ix, iz);
-      const variant = ((i + 1) % 3) as 0 | 1 | 2;
-      const mesh = createWildIceSculptureModel(variant, this.palette);
-      mesh.position.set(ix, iy, iz);
-      mesh.rotation.y = (i * 1.7) % (Math.PI * 2);
-      mesh.visible = false;
-      this.level2Group.add(mesh);
-
-      this.iceSculptures.push({
-        id: nextId++,
-        zone: 'level2',
-        x: ix,
-        z: iz,
-        y: iy,
-        hp: 65,
-        maxHp: 65,
-        iceYield: 3,
-        respawnTimer: 0,
-        shakeTimer: 0,
-        mesh,
-      });
     }
   }
 
@@ -1511,6 +1690,8 @@ export class FrostwoodEngine {
         hearthZ: zSpec.hearthZ,
         portalX: zSpec.portalX,
         portalZ: zSpec.portalZ,
+        forwardPortalX: zSpec.forwardPortalX,
+        forwardPortalZ: zSpec.forwardPortalZ,
         cityPortalX: zone === 'level1' ? LEVEL1_CITY_PORTAL_X : undefined,
         cityPortalZ: zone === 'level1' ? LEVEL1_CITY_PORTAL_Z : undefined,
         playerX: this.playerX,
@@ -1524,6 +1705,9 @@ export class FrostwoodEngine {
     const wanderAngle = Math.random() * Math.PI * 2;
     model.group.rotation.y = wanderAngle;
     this.getZoneGroup(zone).add(model.group);
+    const scaledMaxHp = Math.round(
+      spec.maxHp * (spec.predator ? zSpec.enemyHpMult : Math.max(1, zSpec.enemyHpMult * 0.65)),
+    );
     const entity: AnimalEntity = {
       id: this.nextAnimalId++,
       zone,
@@ -1533,8 +1717,8 @@ export class FrostwoodEngine {
       vx: 0,
       vz: 0,
       yaw: wanderAngle,
-      hp: spec.maxHp,
-      maxHp: spec.maxHp,
+      hp: scaledMaxHp,
+      maxHp: scaledMaxHp,
       hitsTaken: 0,
       state: 'wander',
       stateTimer: 1 + Math.random() * 2,
@@ -1607,20 +1791,57 @@ export class FrostwoodEngine {
       }
     }
 
-    // Level 2 Glacial Highlands population (richer packs + highland rares/apex)
-    const level2Initial: [AnimalKind, number][] = [
-      ['hare', 3],
-      ['fox', 3],
-      ['wolf', 4],
-      ['lynx', 3],
-      ['frost_stag', 2],
-      ['musk_ox', 2],
-      ['polar_bear', 1],
-      ['sabertooth', 1],
-    ];
-    for (const [kind, count] of level2Initial) {
-      for (let i = 0; i < count; i++) {
-        this.spawnAnimal(kind, 14.0, 'level2');
+    // Level 2..5 Wilderness populations (increasing apex & mythic density in higher zones)
+    const zonePackSpecs: Record<'level2' | 'level3' | 'level4' | 'level5', [AnimalKind, number][]> = {
+      level2: [
+        ['hare', 3],
+        ['fox', 3],
+        ['wolf', 4],
+        ['lynx', 3],
+        ['frost_stag', 2],
+        ['musk_ox', 2],
+        ['polar_bear', 1],
+        ['sabertooth', 1],
+      ],
+      level3: [
+        ['fox', 2],
+        ['wolf', 4],
+        ['lynx', 4],
+        ['frost_stag', 3],
+        ['musk_ox', 3],
+        ['polar_bear', 2],
+        ['mammoth', 1],
+        ['sabertooth', 2],
+      ],
+      level4: [
+        ['wolf', 5],
+        ['lynx', 4],
+        ['frost_stag', 3],
+        ['musk_ox', 3],
+        ['polar_bear', 3],
+        ['mammoth', 2],
+        ['sabertooth', 2],
+        ['aurora_fenrir', 1],
+      ],
+      level5: [
+        ['wolf', 5],
+        ['lynx', 4],
+        ['frost_stag', 3],
+        ['musk_ox', 3],
+        ['polar_bear', 3],
+        ['mammoth', 2],
+        ['sabertooth', 3],
+        ['aurora_fenrir', 2],
+      ],
+    };
+
+    for (const [hz, pack] of Object.entries(zonePackSpecs) as Array<
+      ['level2' | 'level3' | 'level4' | 'level5', [AnimalKind, number][]]
+    >) {
+      for (const [kind, count] of pack) {
+        for (let i = 0; i < count; i++) {
+          this.spawnAnimal(kind, 14.0, hz);
+        }
       }
     }
 
@@ -2697,36 +2918,24 @@ export class FrostwoodEngine {
     this.portalCooldown = 0;
     this.vortexCooldown = 0;
     const startZone: ZoneId = this.initialZoneOverride ?? 'level1';
-    let startX = 0;
-    let startZ = 4.6;
-    let startYaw = Math.PI;
+    const startSpec = ZONE_SPECS[startZone];
+    let startX = startSpec.arrivalX;
+    let startZ = startSpec.arrivalZ;
+    let startYaw = startSpec.arrivalYaw;
     if (this.initialBossShowcase) {
-      const bSpec = ZONE_BOSS_SPECS[
-        startZone === 'level2'
-          ? 'veyra_sovereign'
-          : startZone === 'city'
-            ? 'ignis_warden'
-            : 'skarn_colossus'
-      ];
+      const bSpec = getZoneBossSpec(startZone);
       startX = bSpec.arenaX - 7.8;
       startZ = bSpec.arenaZ + 2.2;
       startYaw = Math.atan2(7.8, -2.2);
-    } else if (startZone === 'level2') {
-      const s2 = ZONE_SPECS.level2;
-      startX = s2.arrivalX;
-      startZ = this.initialPortalNear ? s2.portalZ - 2.6 : s2.arrivalZ;
-      startYaw = this.initialPortalNear ? 0 : s2.arrivalYaw;
     } else if (startZone === 'city') {
-      const sc = ZONE_SPECS.city;
-      startX = this.initialCityReady ? CITY_QUEST_NPC.x : sc.arrivalX;
-      startZ = this.initialCityReady ? CITY_QUEST_NPC.z + 3.2 : sc.arrivalZ;
-      startYaw = this.initialCityReady ? Math.PI : sc.arrivalYaw;
+      startX = this.initialCityReady ? CITY_QUEST_NPC.x : startSpec.arrivalX;
+      startZ = this.initialCityReady ? CITY_QUEST_NPC.z + 3.2 : startSpec.arrivalZ;
+      startYaw = this.initialCityReady ? Math.PI : startSpec.arrivalYaw;
     } else if (this.initialPortalNear) {
-      const s1 = ZONE_SPECS.level1;
-      startX = s1.portalX;
-      startZ = s1.portalZ + 2.8;
-      startYaw = Math.PI;
-    } else if (typeof this.initialHunterNear === 'string') {
+      startX = startSpec.portalX;
+      startZ = startZone === 'level1' ? startSpec.portalZ + 2.8 : startSpec.portalZ - 2.6;
+      startYaw = startZone === 'level1' ? Math.PI : 0;
+    } else if (typeof this.initialHunterNear === 'string' && startZone === 'level1') {
       startX = 9.2;
       startZ = 21.8;
       startYaw = Math.PI;
@@ -2803,7 +3012,7 @@ export class FrostwoodEngine {
       b.respawnTimer = 0;
       b.shakeTimer = 0;
       b.mesh.visible = true;
-      const baseScale = b.zone === 'level2' ? 1.12 : 1;
+      const baseScale = b.zone !== 'level1' ? 1.12 : 1;
       b.mesh.scale.set(baseScale, baseScale, baseScale);
     }
 
@@ -2825,6 +3034,13 @@ export class FrostwoodEngine {
     this.syncPlayerWeaponVisuals();
     this.syncPlayerGearVisuals();
     this.checkAchievements(false);
+    this.chatLogs = [];
+    this.nextChatLogId = 1;
+    this.pushChatLog(
+      'notification',
+      `Expedition begun in ${ZONE_SPECS[startZone].name} (${ZONE_SPECS[startZone].difficultyMult}x Survival).`,
+      'cyan',
+    );
     this.showToast(
       startZone === 'city'
         ? 'Welcome to Frostcave City — trade Coins & Meat with cavern merchants!'
@@ -3556,6 +3772,9 @@ export class FrostwoodEngine {
     this.activeZone = nextZone;
     this.level1Group.visible = nextZone === 'level1';
     this.level2Group.visible = nextZone === 'level2';
+    this.level3Group.visible = nextZone === 'level3';
+    this.level4Group.visible = nextZone === 'level4';
+    this.level5Group.visible = nextZone === 'level5';
     this.cityGroup.visible = nextZone === 'city';
 
     for (const a of this.arrows) {
@@ -3599,11 +3818,12 @@ export class FrostwoodEngine {
       this.vortexCooldown = PORTAL_COOLDOWN_SECONDS;
       this.audio.playPortalWarp(nextZone !== 'level1');
       const burstY = groundHeightAt(this.playerX, this.playerZ) + 1.4;
+      const zSpec = ZONE_SPECS[nextZone];
       this.particles.spawnBurst(
         this.playerX,
         burstY,
         this.playerZ,
-        nextZone === 'level2' ? 0x5be7ff : 0xf6c344,
+        nextZone !== 'level1' && nextZone !== 'city' ? 0x5be7ff : 0xf6c344,
         28,
         6.2,
         1.25,
@@ -3613,12 +3833,33 @@ export class FrostwoodEngine {
       this.showToast(
         nextZone === 'city'
           ? 'Entered Frostcave City — Subterranean Merchant Bazaar & Hearth Sanctuary!'
-          : nextZone === 'level2'
-            ? 'Entered Level 2: Glacial Highlands (+45% Harvest Yield & +50% XP)!'
-            : 'Returned to Level 1: Frostwood Valley!',
+          : nextZone === 'level1'
+            ? 'Returned to Level 1: Frostwood Valley (1x Baseline Survival)!'
+            : `Entered ${zSpec.name} (${zSpec.subtitle} · ${zSpec.difficultyMult}x Survival Difficulty)!`,
       );
       this.emitHudSnapshot();
     }
+  }
+
+  public travelToZone(targetZone: ZoneId): boolean {
+    if (this.phase !== 'playing') return false;
+    const spec = ZONE_SPECS[targetZone];
+    if (!spec) return false;
+    this.trackedAnimalId = null;
+    this.trackAmbushBonusTimer = 0;
+    this.sightPulseAnimTimer = 0;
+    this.sightPulseRingMesh.visible = false;
+    let spawnX = spec.arrivalX;
+    let spawnZ = spec.arrivalZ;
+    let spawnYaw = spec.arrivalYaw;
+    if (this.initialBossShowcase) {
+      const bSpec = getZoneBossSpec(targetZone);
+      spawnX = bSpec.arenaX - 7.8;
+      spawnZ = bSpec.arenaZ + 2.2;
+      spawnYaw = Math.atan2(7.8, -2.2);
+    }
+    this.setActiveZone(targetZone, { x: spawnX, z: spawnZ, yaw: spawnYaw }, true);
+    return true;
   }
 
   public activatePortal(): boolean {
@@ -3886,9 +4127,83 @@ export class FrostwoodEngine {
     }
   }
 
+  private formatRunClock(): string {
+    const totalSec = Math.max(0, Math.floor(this.totalTime || 0));
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  private pushChatLog(
+    category: ChatLogCategory,
+    text: string,
+    accent?: ChatLogEntry['accent'],
+    rarity?: ItemRarity,
+  ): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const last = this.chatLogs[this.chatLogs.length - 1];
+    if (last && last.text === trimmed && last.category === category) {
+      return;
+    }
+    this.chatLogs.push({
+      id: this.nextChatLogId++,
+      timestamp: this.formatRunClock(),
+      category,
+      text: trimmed,
+      accent,
+      rarity,
+    });
+    if (this.chatLogs.length > 48) {
+      this.chatLogs.splice(0, this.chatLogs.length - 48);
+    }
+  }
+
   private showToast(msg: string): void {
     this.toastText = msg;
     this.toastTimer = 3.2;
+
+    const lower = msg.toLowerCase();
+    if (
+      msg.startsWith('Opened ') ||
+      msg.startsWith('BOSS VANQUISHED:') ||
+      msg.startsWith('Purchased ') ||
+      msg.startsWith('Sold ') ||
+      msg.startsWith('Traded ') ||
+      lower.includes('spoils') ||
+      lower.includes('glints somewhere')
+    ) {
+      const rarity: ItemRarity | undefined = lower.includes('mythic')
+        ? 'mythic'
+        : lower.includes('epic')
+          ? 'epic'
+          : lower.includes('rare')
+            ? 'rare'
+            : lower.includes('uncommon')
+              ? 'uncommon'
+              : undefined;
+      this.pushChatLog(
+        'loot',
+        msg,
+        rarity === 'mythic' || rarity === 'epic' ? 'purple' : 'gold',
+        rarity,
+      );
+    } else if (
+      msg.startsWith('BOSS ENCOUNTER:') ||
+      msg.startsWith('PHASE II ENRAGE:') ||
+      lower.includes('struck') ||
+      lower.includes('landed') ||
+      lower.includes('projectile hit') ||
+      lower.includes('eruption') ||
+      lower.includes('ambushed') ||
+      lower.includes('felled') ||
+      lower.includes('staggered') ||
+      lower.includes('stalks')
+    ) {
+      this.pushChatLog('combat', msg, 'red');
+    } else {
+      this.pushChatLog('notification', msg, 'cyan');
+    }
   }
 
   private recordGoldEarned(amount: number): void {
@@ -4158,6 +4473,24 @@ export class FrostwoodEngine {
       this.waystationBrazier.flames.rotation.y += dt * 1.6;
       this.waystationBrazier.light.intensity = 7.4 * flicker * this.campfireGlowMult;
       this.animatePortal(this.portal2, dt, 1.7);
+      this.animatePortal(this.portal2Forward, dt, 2.0);
+    } else if (this.activeZone === 'level3') {
+      this.waystationBrazier3.flames.scale.set(1, flicker, 1);
+      this.waystationBrazier3.flames.rotation.y += dt * 1.6;
+      this.waystationBrazier3.light.intensity = 7.0 * flicker * this.campfireGlowMult;
+      this.animatePortal(this.portal3Return, dt, 2.5);
+      this.animatePortal(this.portal3Forward, dt, 2.9);
+    } else if (this.activeZone === 'level4') {
+      this.waystationBrazier4.flames.scale.set(1, flicker, 1);
+      this.waystationBrazier4.flames.rotation.y += dt * 1.6;
+      this.waystationBrazier4.light.intensity = 6.6 * flicker * this.campfireGlowMult;
+      this.animatePortal(this.portal4Return, dt, 3.2);
+      this.animatePortal(this.portal4Forward, dt, 3.6);
+    } else if (this.activeZone === 'level5') {
+      this.waystationBrazier5.flames.scale.set(1, flicker, 1);
+      this.waystationBrazier5.flames.rotation.y += dt * 1.6;
+      this.waystationBrazier5.light.intensity = 6.2 * flicker * this.campfireGlowMult;
+      this.animatePortal(this.portal5Return, dt, 4.0);
     } else {
       this.animatePortal(this.cityPortal2, dt, 2.3);
     }
@@ -5297,7 +5630,13 @@ export class FrostwoodEngine {
         ? this.cityWorldGroup
         : this.activeZone === 'level2'
           ? this.level2WorldGroup
-          : this.worldGroup,
+          : this.activeZone === 'level3'
+            ? this.level3WorldGroup
+            : this.activeZone === 'level4'
+              ? this.level4WorldGroup
+              : this.activeZone === 'level5'
+                ? this.level5WorldGroup
+                : this.worldGroup,
       this.totalTime,
       gustIntensity,
     );
@@ -5376,7 +5715,7 @@ export class FrostwoodEngine {
 
   private updateBoulders(dt: number): void {
     for (const b of this.boulders) {
-      const baseScale = b.zone === 'level2' ? 1.12 : 1;
+      const baseScale = b.zone !== 'level1' ? 1.12 : 1;
       if (b.respawnTimer > 0) {
         b.respawnTimer -= dt;
         if (b.respawnTimer <= 0) {
@@ -5608,7 +5947,7 @@ export class FrostwoodEngine {
             );
           }
           if (distPlayer < hitDist && this.hurtFlashTimer <= 0) {
-            this.damagePlayer(spec.lungeDamage);
+            this.damagePlayer(Math.round(spec.lungeDamage * zSpec.enemyDamageMult));
             a.stateTimer = 0;
           }
           if (a.stateTimer <= 0) {
@@ -6010,11 +6349,18 @@ export class FrostwoodEngine {
     for (const id of ZONE_BOSS_ORDER) {
       const spec = ZONE_BOSS_SPECS[id];
       const model =
-        id === 'skarn_colossus'
+        id === 'skarn_colossus' || id === 'ulthar_behemoth'
           ? createTimberColossusModel(this.palette)
-          : id === 'veyra_sovereign'
+          : id === 'veyra_sovereign' || id === 'astraea_valkyrie'
             ? createCryoSovereignModel(this.palette)
             : createCavernWardenModel(this.palette);
+      if (id === 'ulthar_behemoth') {
+        model.group.scale.setScalar(1.18);
+      } else if (id === 'astraea_valkyrie') {
+        model.group.scale.setScalar(1.16);
+      } else if (id === 'malakor_gargoyle') {
+        model.group.scale.setScalar(1.1);
+      }
       const gy = groundHeightAt(spec.arenaX, spec.arenaZ);
       const yaw = spec.zone === 'city' ? -Math.PI / 2 : 0;
       model.group.position.set(spec.arenaX, gy, spec.arenaZ);
@@ -6047,6 +6393,10 @@ export class FrostwoodEngine {
         respawnTimer: 0,
         flashTimer: 0,
         walkPhase: 0,
+        strafeSign: id === 'veyra_sovereign' || id === 'ulthar_behemoth' ? -1 : 1,
+        strafeFlipTimer: 2.4,
+        strideSpeed: 0,
+        tacticLabel: 'Arena Patrol',
         model,
       });
     }
@@ -6358,15 +6708,62 @@ export class FrostwoodEngine {
       return;
     }
 
+    if (pattern.kind === 'cross_eruption' || pattern.kind === 'ring_wave') {
+      const points = rollTacticalAoEPatternPoints(
+        pattern.kind,
+        boss.x,
+        boss.z,
+        this.playerX,
+        this.playerZ,
+        boss.enraged,
+        boss.spec,
+      );
+      this.audio.playBossImpact(boss.id, true, boss.x, boss.z);
+      this.trauma = Math.min(0.78, this.trauma + 0.32);
+      this.particles.spawnBurst(
+        boss.x,
+        gy + 0.85,
+        boss.z,
+        pattern.telegraphColorHex,
+        26,
+        7.2,
+        1.2,
+        4.5,
+      );
+      for (const pt of points) {
+        this.spawnBossHazardZone(
+          boss,
+          pt.x,
+          pt.z,
+          radius * pt.radiusScale,
+          0.92,
+          dmg,
+          pattern.warmthDrain,
+          pattern.telegraphColorHex,
+        );
+      }
+      this.pushChatLog(
+        'combat',
+        `${boss.spec.name} unleashed ${pattern.label} (${points.length} AoE hazard zones)!`,
+        'amber',
+      );
+      boss.state = 'recover';
+      boss.stateTimer = 0.78;
+      return;
+    }
+
     if (pattern.kind === 'charge' || pattern.kind === 'leap') {
-      const dx = this.playerX - boss.x;
-      const dz = this.playerZ - boss.z;
+      // Lead player's velocity slightly on charge/leap for tactical precision
+      const leadX = this.playerX + this.playerVx * 0.28;
+      const leadZ = this.playerZ + this.playerVz * 0.28;
+      const dx = leadX - boss.x;
+      const dz = leadZ - boss.z;
       const norm = Math.hypot(dx, dz) || 1;
       boss.chargeDirX = dx / norm;
       boss.chargeDirZ = dz / norm;
       boss.yaw = Math.atan2(boss.chargeDirX, boss.chargeDirZ);
-      boss.targetX = this.playerX;
-      boss.targetZ = this.playerZ;
+      boss.targetX = leadX;
+      boss.targetZ = leadZ;
       boss.state = 'attack';
       boss.stateTimer = pattern.kind === 'leap' ? 0.48 : 0.42;
       this.audio.playBossImpact(boss.id, false, boss.x, boss.z);
@@ -6385,6 +6782,8 @@ export class FrostwoodEngine {
       }
 
       if (boss.state === 'ko') {
+        boss.strideSpeed = 0;
+        boss.tacticLabel = 'Vanquished';
         if (boss.stateTimer > 0) {
           boss.stateTimer = Math.max(0, boss.stateTimer - dt);
           boss.model.bodyPivot.rotation.x = THREE.MathUtils.damp(
@@ -6400,9 +6799,11 @@ export class FrostwoodEngine {
           boss.enraged = false;
           boss.enrageAnnounced = false;
           boss.state = 'idle';
+          boss.tacticLabel = 'Arena Patrol';
           boss.x = boss.spec.arenaX;
           boss.z = boss.spec.arenaZ;
           boss.model.bodyPivot.rotation.x = 0;
+          boss.model.bodyPivot.rotation.z = 0;
           boss.model.auraRingMat.color.setHex(boss.spec.accentColorHex);
           boss.model.auraRingMat.opacity = 0.46;
           boss.model.group.visible = true;
@@ -6415,7 +6816,6 @@ export class FrostwoodEngine {
       }
 
       boss.model.group.visible = true;
-      boss.model.bodyPivot.rotation.x = THREE.MathUtils.damp(boss.model.bodyPivot.rotation.x, 0, 8, dt);
 
       const dx = this.playerX - boss.x;
       const dz = this.playerZ - boss.z;
@@ -6430,20 +6830,33 @@ export class FrostwoodEngine {
         boss.attackCooldown = Math.max(0, boss.attackCooldown - dt);
       }
 
+      boss.strafeFlipTimer -= dt;
+      if (boss.strafeFlipTimer <= 0) {
+        boss.strafeSign = boss.strafeSign === 1 ? -1 : 1;
+        boss.strafeFlipTimer = 2.1 + (boss.patternIndex % 3) * 0.65;
+      }
+
       if (boss.state === 'idle') {
         boss.model.telegraphGroup.visible = false;
+        boss.tacticLabel = 'Arena Patrol';
         // Drift calmly back to arena heart if displaced
         const homeDx = boss.spec.arenaX - boss.x;
         const homeDz = boss.spec.arenaZ - boss.z;
         const homeDist = Math.hypot(homeDx, homeDz);
         if (homeDist > 1.2) {
-          boss.x += (homeDx / homeDist) * boss.spec.moveSpeed * 0.7 * dt;
-          boss.z += (homeDz / homeDist) * boss.spec.moveSpeed * 0.7 * dt;
+          const returnSpd = boss.spec.moveSpeed * 0.7;
+          boss.x += (homeDx / homeDist) * returnSpd * dt;
+          boss.z += (homeDz / homeDist) * returnSpd * dt;
           boss.yaw = dampAngle(boss.yaw, Math.atan2(homeDx, homeDz), 6, dt);
-          boss.walkPhase += dt * 4.5;
+          boss.strideSpeed = returnSpd;
+          boss.walkPhase += dt * returnSpd * 1.45;
+        } else {
+          boss.strideSpeed = 0;
+          boss.walkPhase += dt * 1.6;
         }
         if (distPlayerArena <= boss.spec.engageRadius) {
           boss.state = 'engage';
+          boss.tacticLabel = 'Closing Range';
           this.showToast(`BOSS ENCOUNTER: ${boss.spec.name} — ${boss.spec.title}!`);
           this.emitHudSnapshot();
         }
@@ -6452,24 +6865,40 @@ export class FrostwoodEngine {
         if (distPlayerArena > boss.spec.leashRadius + 4) {
           // Player retreated safely out of the arena; reset boss calmly
           boss.state = 'idle';
+          boss.strideSpeed = 0;
+          boss.tacticLabel = 'Arena Patrol';
           boss.hp = Math.min(boss.maxHp, boss.hp + boss.maxHp * 0.15);
           boss.enraged = isBossEnraged(boss.hp, boss.maxHp);
           boss.activePattern = null;
           this.emitHudSnapshot();
         } else {
-          boss.yaw = dampAngle(boss.yaw, desiredYaw, 7, dt);
-          const speed = boss.spec.moveSpeed * (boss.enraged ? boss.spec.enrageMoveMult : 1.0);
-          if (distToPlayer > 3.2) {
-            const norm = distToPlayer || 1;
-            const nextPos = computeArenaContainment(
-              boss.x + (dx / norm) * speed * dt,
-              boss.z + (dz / norm) * speed * dt,
-              boss.spec,
-            );
-            boss.x = nextPos.x;
-            boss.z = nextPos.z;
-            boss.walkPhase += dt * speed * 1.4;
-          }
+          const tactic = computeBossTacticalMovement({
+            spec: boss.spec,
+            bossX: boss.x,
+            bossZ: boss.z,
+            playerX: this.playerX,
+            playerZ: this.playerZ,
+            playerVx: this.playerVx,
+            playerVz: this.playerVz,
+            enraged: boss.enraged,
+            cooldownLeft: boss.attackCooldown,
+            strafeSign: boss.strafeSign,
+            animPhase: boss.walkPhase,
+          });
+          boss.vx = tactic.vx;
+          boss.vz = tactic.vz;
+          boss.strideSpeed = tactic.strideSpeed;
+          boss.tacticLabel = tactic.tacticLabel;
+          boss.yaw = dampAngle(boss.yaw, tactic.desiredYaw, 7.5, dt);
+
+          const nextPos = computeArenaContainment(
+            boss.x + tactic.vx * dt,
+            boss.z + tactic.vz * dt,
+            boss.spec,
+          );
+          boss.x = nextPos.x;
+          boss.z = nextPos.z;
+          boss.walkPhase += dt * Math.max(1.8, tactic.strideSpeed * 1.55);
 
           if (boss.attackCooldown <= 0) {
             const pattern = selectNextBossAttack(
@@ -6483,15 +6912,25 @@ export class FrostwoodEngine {
             boss.telegraphDuration = windup;
             boss.stateTimer = windup;
             boss.state = 'telegraph';
+            boss.strideSpeed = 0.4;
+            boss.tacticLabel = `Casting ${pattern.label}`;
             this.audio.playBossTelegraph(boss.id, boss.enraged, boss.x, boss.z);
+            this.pushChatLog(
+              'combat',
+              `[Boss] ${boss.spec.name} telegraphs ${pattern.label}!`,
+              'amber',
+            );
             this.emitHudSnapshot();
           }
         }
       } else if (boss.state === 'telegraph') {
-        boss.yaw = dampAngle(boss.yaw, desiredYaw, 5, dt);
+        boss.yaw = dampAngle(boss.yaw, desiredYaw, 5.5, dt);
         boss.stateTimer -= dt;
+        boss.strideSpeed = 0.25;
+        boss.walkPhase += dt * 3.2;
         const pattern = boss.activePattern;
         if (pattern) {
+          boss.tacticLabel = `Casting ${pattern.label}`;
           const progress = clamp(
             1 - boss.stateTimer / Math.max(0.01, boss.telegraphDuration),
             0,
@@ -6506,20 +6945,6 @@ export class FrostwoodEngine {
             boss.zone === 'level2' ? 0xe879f9 : 0xef4444,
           );
           boss.model.telegraphFillMat.opacity = 0.28 + progress * 0.36;
-
-          // Dramatic windup arm raise
-          boss.model.leftArmPivot.rotation.x = THREE.MathUtils.damp(
-            boss.model.leftArmPivot.rotation.x,
-            -2.1,
-            10,
-            dt,
-          );
-          boss.model.rightArmPivot.rotation.x = THREE.MathUtils.damp(
-            boss.model.rightArmPivot.rotation.x,
-            -2.25,
-            10,
-            dt,
-          );
         }
         if (boss.stateTimer <= 0) {
           boss.model.telegraphGroup.visible = false;
@@ -6537,6 +6962,8 @@ export class FrostwoodEngine {
         boss.stateTimer -= dt;
         if (pattern && (pattern.kind === 'charge' || pattern.kind === 'leap')) {
           const speed = pattern.chargeSpeed * (boss.enraged ? 1.16 : 1.0);
+          boss.strideSpeed = speed;
+          boss.tacticLabel = pattern.kind === 'leap' ? 'Aerial Leap Slam' : 'Juggernaut Charge';
           const bounded = computeArenaContainment(
             boss.x + boss.chargeDirX * speed * dt,
             boss.z + boss.chargeDirZ * speed * dt,
@@ -6544,14 +6971,8 @@ export class FrostwoodEngine {
           );
           boss.x = bounded.x;
           boss.z = bounded.z;
-          boss.walkPhase += dt * 14;
-          if (pattern.kind === 'leap') {
-            const leapArc = Math.sin(clamp(boss.stateTimer / 0.48, 0, 1) * Math.PI);
-            boss.model.bodyPivot.position.y =
-              (boss.id === 'veyra_sovereign' ? 0.35 : 0) + leapArc * 2.4;
-          }
+          boss.walkPhase += dt * 15;
           if (boss.stateTimer <= 0) {
-            boss.model.bodyPivot.position.y = boss.id === 'veyra_sovereign' ? 0.35 : 0;
             const impactRadius = boss.enraged ? pattern.enragedRadius : pattern.radius;
             const hitDist = Math.hypot(this.playerX - boss.x, this.playerZ - boss.z);
             const dmg = Math.round(
@@ -6583,39 +7004,116 @@ export class FrostwoodEngine {
       } else if (boss.state === 'recover') {
         boss.model.telegraphGroup.visible = false;
         boss.stateTimer -= dt;
-        boss.model.leftArmPivot.rotation.x = THREE.MathUtils.damp(
-          boss.model.leftArmPivot.rotation.x,
-          0.1,
-          8,
-          dt,
-        );
-        boss.model.rightArmPivot.rotation.x = THREE.MathUtils.damp(
-          boss.model.rightArmPivot.rotation.x,
-          0.1,
-          8,
-          dt,
-        );
+        boss.strideSpeed = 0.2;
+        boss.tacticLabel = 'Recovering Stance';
         if (boss.stateTimer <= 0) {
           boss.activePattern = null;
           boss.state = 'engage';
         }
       }
 
-      // Continuous Boss Animation (floating hover for Veyra, heavy stride & arm swing for Skarn & Ignis)
+      // Articulated Procedural Kinematic Animation (legs, arms, torso pitch/roll, head tracking)
       const gy = groundHeightAt(boss.x, boss.z);
       boss.model.group.position.set(boss.x, gy, boss.z);
       boss.model.group.rotation.y = boss.yaw;
       boss.model.orbitGroup.rotation.y += dt * (boss.enraged ? 3.2 : 1.7);
       boss.model.auraRingMesh.rotation.z += dt * (boss.enraged ? 1.8 : 0.8);
-      if (boss.state !== 'telegraph' && boss.state !== 'attack') {
-        if (boss.id === 'veyra_sovereign') {
-          boss.model.bodyPivot.position.y = 0.35 + Math.sin(this.totalTime * 2.8) * 0.18;
-        } else {
-          boss.model.bodyPivot.position.y = Math.abs(Math.sin(boss.walkPhase)) * 0.14;
-        }
-        boss.model.leftArmPivot.rotation.x = Math.sin(boss.walkPhase) * 0.25;
-        boss.model.rightArmPivot.rotation.x = -Math.sin(boss.walkPhase) * 0.25;
-      }
+
+      const pose = computeBossKinematicPose({
+        bossId: boss.id,
+        state: boss.state,
+        attackKind: boss.activePattern?.kind ?? null,
+        animPhase: boss.walkPhase,
+        strideSpeed: boss.strideSpeed,
+        stateTimer: boss.stateTimer,
+        windupSeconds: Math.max(0.1, boss.telegraphDuration),
+        enraged: boss.enraged,
+      });
+
+      const isLeapMidAir =
+        boss.state === 'attack' && boss.activePattern?.kind === 'leap';
+      const targetBodyY = isLeapMidAir
+        ? pose.bodyY + Math.sin(clamp(boss.stateTimer / 0.48, 0, 1) * Math.PI) * 2.4
+        : pose.bodyY;
+
+      boss.model.bodyPivot.position.y = THREE.MathUtils.damp(
+        boss.model.bodyPivot.position.y,
+        targetBodyY,
+        12,
+        dt,
+      );
+      boss.model.bodyPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.bodyPivot.rotation.x,
+        pose.bodyPitchX,
+        10,
+        dt,
+      );
+      boss.model.bodyPivot.rotation.z = THREE.MathUtils.damp(
+        boss.model.bodyPivot.rotation.z,
+        pose.bodyRollZ,
+        10,
+        dt,
+      );
+      boss.model.leftLegPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.leftLegPivot.rotation.x,
+        pose.leftLegX,
+        14,
+        dt,
+      );
+      boss.model.rightLegPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.rightLegPivot.rotation.x,
+        pose.rightLegX,
+        14,
+        dt,
+      );
+      boss.model.leftLegPivot.rotation.z = THREE.MathUtils.damp(
+        boss.model.leftLegPivot.rotation.z,
+        pose.leftLegZ,
+        12,
+        dt,
+      );
+      boss.model.rightLegPivot.rotation.z = THREE.MathUtils.damp(
+        boss.model.rightLegPivot.rotation.z,
+        pose.rightLegZ,
+        12,
+        dt,
+      );
+      boss.model.leftArmPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.leftArmPivot.rotation.x,
+        pose.leftArmX,
+        12,
+        dt,
+      );
+      boss.model.rightArmPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.rightArmPivot.rotation.x,
+        pose.rightArmX,
+        12,
+        dt,
+      );
+      boss.model.leftArmPivot.rotation.z = THREE.MathUtils.damp(
+        boss.model.leftArmPivot.rotation.z,
+        pose.leftArmZ,
+        10,
+        dt,
+      );
+      boss.model.rightArmPivot.rotation.z = THREE.MathUtils.damp(
+        boss.model.rightArmPivot.rotation.z,
+        pose.rightArmZ,
+        10,
+        dt,
+      );
+      boss.model.headPivot.rotation.y = THREE.MathUtils.damp(
+        boss.model.headPivot.rotation.y,
+        pose.headYawY,
+        10,
+        dt,
+      );
+      boss.model.headPivot.rotation.x = THREE.MathUtils.damp(
+        boss.model.headPivot.rotation.x,
+        pose.headPitchX,
+        10,
+        dt,
+      );
     }
   }
 
@@ -6764,6 +7262,8 @@ export class FrostwoodEngine {
     rig.group.rotation.y = wanderAngle;
     this.getZoneGroup(zone).add(rig.group);
 
+    const zSpec = ZONE_SPECS[zone];
+    const scaledHunterHp = Math.round(arch.maxHp * zSpec.enemyHpMult);
     const entity: RivalHunterEntity = {
       id: this.nextHunterId++,
       zone,
@@ -6773,8 +7273,8 @@ export class FrostwoodEngine {
       vx: 0,
       vz: 0,
       yaw: wanderAngle,
-      hp: arch.maxHp,
-      maxHp: arch.maxHp,
+      hp: scaledHunterHp,
+      maxHp: scaledHunterHp,
       state: 'prowl',
       stateTimer: 2 + Math.random() * 2,
       attackCooldown: 0,
@@ -6795,7 +7295,7 @@ export class FrostwoodEngine {
     }
     this.rivalHunters.length = 0;
 
-    // Spawn baseline Rival Rogue Hunters across Level 1 & Level 2
+    // Spawn baseline Rival Rogue Hunters across all 5 wilderness zones
     const explicitNearHunter: RivalHunterArchetypeId =
       typeof this.initialHunterNear === 'string' ? this.initialHunterNear : 'poacher';
     this.spawnRivalHunter(
@@ -6806,15 +7306,20 @@ export class FrostwoodEngine {
     this.spawnRivalHunter('level1', undefined, 'raider');
     this.spawnRivalHunter('level2', undefined, 'raider');
     this.spawnRivalHunter('level2', undefined, 'shadow_stalker');
+    this.spawnRivalHunter('level3', undefined, 'shadow_stalker');
+    this.spawnRivalHunter('level3', undefined, 'frost_berserker');
+    this.spawnRivalHunter('level4', undefined, 'frost_berserker');
+    this.spawnRivalHunter('level4', undefined, 'aurora_warlock');
+    this.spawnRivalHunter('level5', undefined, 'frost_berserker');
+    this.spawnRivalHunter('level5', undefined, 'aurora_warlock');
 
     // Small initial chance for an extra Rare / Mythic enemy encounter in each wilderness zone
-    const rareL1 = rollRareEnemyAmbush('level1', 0, Math.random);
-    if (rareL1) {
-      this.spawnRivalHunter('level1', undefined, rareL1.id);
-    }
-    const rareL2 = rollRareEnemyAmbush('level2', 0, Math.random);
-    if (rareL2) {
-      this.spawnRivalHunter('level2', undefined, rareL2.id);
+    const wildernessZones: ZoneId[] = ['level1', 'level2', 'level3', 'level4', 'level5'];
+    for (const z of wildernessZones) {
+      const rareAmbush = rollRareEnemyAmbush(z, 0, Math.random);
+      if (rareAmbush) {
+        this.spawnRivalHunter(z, undefined, rareAmbush.id);
+      }
     }
     this.hunterSpawnTimer = 20;
   }
@@ -6878,18 +7383,18 @@ export class FrostwoodEngine {
       const targetZone = this.activeZone === 'city' ? 'level1' : this.activeZone;
       const lootInfo = buildLootScalingHudInfo(this.getLootScalingContext(targetZone));
       const showcaseRarity: SecretChestRarity =
-        targetZone === 'level2' || lootInfo.effectiveGearLevel >= 3.5 ? 'aurora' : 'relic';
+        targetZone !== 'level1' || lootInfo.effectiveGearLevel >= 3.5 ? 'aurora' : 'relic';
       const showcasePos =
-        targetZone === 'level2'
+        targetZone !== 'level1' || this.initialBossShowcase
           ? { x: this.playerX - 2.4, z: this.playerZ + 1.2 }
           : { x: -3.1, z: 5.8 };
       this.spawnSecretChest(targetZone, showcasePos, showcaseRarity);
-    } else if (Math.random() < 0.35) {
-      // Small initial wilderness chance
-      this.spawnSecretChest('level1');
-    }
-    if (!this.initialChestShowcase && Math.random() < 0.45) {
-      this.spawnSecretChest('level2');
+    } else {
+      if (Math.random() < 0.35) this.spawnSecretChest('level1');
+      if (Math.random() < 0.45) this.spawnSecretChest('level2');
+      if (Math.random() < 0.55) this.spawnSecretChest('level3');
+      if (Math.random() < 0.65) this.spawnSecretChest('level4');
+      if (Math.random() < 0.75) this.spawnSecretChest('level5');
     }
   }
 
@@ -7203,16 +7708,17 @@ export class FrostwoodEngine {
           if (h.attackCooldown <= 0) {
             h.attackCooldown = arch.attackCooldown;
             h.stateTimer = 0.34;
+            const scaledDmg = Math.round(arch.attackDamage * zSpec.enemyDamageMult);
             if (arch.id === 'aurora_warlock') {
               this.spawnEnemyFrostBolt(
                 h,
                 this.playerX,
                 this.playerZ,
-                arch.attackDamage,
+                scaledDmg,
                 arch.warmthDrain ?? 12,
               );
             } else {
-              this.damagePlayer(arch.attackDamage);
+              this.damagePlayer(scaledDmg);
               if (arch.warmthDrain && arch.warmthDrain > 0) {
                 this.warmth = Math.max(0, this.warmth - arch.warmthDrain);
               }
@@ -7225,10 +7731,10 @@ export class FrostwoodEngine {
               h.stolenBag = theft.stolenBag;
               if (theft.summaryText) {
                 this.showToast(
-                  `${arch.name} struck you (-${arch.attackDamage} HP) & stole ${theft.summaryText}! Slay them to recover it!`,
+                  `${arch.name} struck you (-${scaledDmg} HP) & stole ${theft.summaryText}! Slay them to recover it!`,
                 );
               } else {
-                this.showToast(`${arch.name} ambushed you for -${arch.attackDamage} HP!`);
+                this.showToast(`${arch.name} ambushed you for -${scaledDmg} HP!`);
               }
               this.emitHudSnapshot();
             }
@@ -7416,14 +7922,17 @@ export class FrostwoodEngine {
             this.achievementCounters.woodCollected += added;
             this.advanceObjectiveMetric('woodHarvested', added);
             this.awardSkillXp('gathering', 3);
+            this.pushChatLog('drop', `+${added} Timber Wood collected`, 'green');
           } else if (p.kind === 'stone') {
             this.resources.stone = (this.resources.stone ?? 0) + added;
             this.awardSkillXp('gathering', 3);
+            this.pushChatLog('drop', `+${added} Granite Stone quarried`, 'cyan');
           } else {
             this.resources.pelts += added;
             this.stats.peltsCollected += added;
             this.advanceObjectiveMetric('peltsCollected', added);
             this.awardSkillXp('hunting', 5);
+            this.pushChatLog('drop', `+${added} Arctic Pelt collected`, 'amber');
           }
 
           this.audio.playPickup(p.kind);
@@ -7441,12 +7950,15 @@ export class FrostwoodEngine {
         if (p.kind === 'ice') {
           this.resources.ice = (this.resources.ice ?? 0) + p.amount;
           this.awardSkillXp('gathering', 4);
+          this.pushChatLog('drop', `+${p.amount} Glacial Ice Shards collected`, 'cyan');
         } else if (p.kind === 'meat') {
           this.resources.meat = (this.resources.meat ?? 0) + p.amount;
           this.awardSkillXp('hunting', 3);
+          this.pushChatLog('drop', `+${p.amount} Wild Meat harvested`, 'amber');
         } else {
           this.resources.gold += p.amount;
           this.recordGoldEarned(p.amount);
+          this.pushChatLog('drop', `+${p.amount} Gold Coins picked up`, 'gold');
         }
         this.audio.playPickup(p.kind);
         p.mesh.parent?.remove(p.mesh);
@@ -7902,6 +8414,9 @@ export class FrostwoodEngine {
     const level2Species: PetSpeciesId[] = ['snowy_owl', 'glacial_lynx', 'calf_mammoth'];
     for (const sp of level2Species) {
       this.spawnWildPet('level2', sp);
+      this.spawnWildPet('level3', sp);
+      this.spawnWildPet('level4', sp);
+      this.spawnWildPet('level5', sp);
     }
     this.wildPetRespawnTimer = 14;
   }
@@ -8005,7 +8520,7 @@ export class FrostwoodEngine {
       const inZone = this.wildPets.filter((p) => p.zone === this.activeZone).length;
       if (inZone < 4) {
         const pool: PetSpeciesId[] =
-          this.activeZone === 'level2'
+          this.activeZone !== 'level1'
             ? ['snowy_owl', 'frost_pup', 'glacial_lynx', 'calf_mammoth']
             : ['snow_hare', 'arctic_fox', 'snowy_owl', 'frost_pup'];
         const sp = pool[Math.floor(Math.random() * pool.length)] ?? 'snow_hare';
@@ -8482,11 +8997,10 @@ export class FrostwoodEngine {
     let contextHint: string | null = null;
     if (zoneInfo.nearCityPortal) {
       contextHint = 'Press [E] or step through East Gate Portal -> Frostcave City (Traders & Bazaar)';
+    } else if (zoneInfo.nearForwardPortal && zoneInfo.forwardZoneName) {
+      contextHint = `Press [E] or step through Forward Portal -> ${zoneInfo.forwardZoneName}`;
     } else if (zoneInfo.nearPortal) {
-      contextHint =
-        this.activeZone === 'level1'
-          ? 'Press [E] or step through Northgate Portal -> Level 2: Glacial Highlands'
-          : 'Press [E] or step through Return Portal -> Level 1: Frostwood Valley';
+      contextHint = `Press [E] or step through Portal -> ${zoneInfo.returnZoneName ?? 'Level 2: Glacial Highlands'}`;
     } else if (nearCityQuestNpc) {
       contextHint = `Press [E] to speak with ${CITY_QUEST_NPC.name} · Daily Quest for Wings of Fire!`;
     } else if (nearCityTrader) {
@@ -8520,8 +9034,8 @@ export class FrostwoodEngine {
       contextHint = 'Press E to Sell Wood & Pelts';
     } else if (this.activeZone === 'level1' && distCamp <= 6.5) {
       contextHint = 'Campfire Warmth · [C] Station · [J] Pets · [L] Badges · East Road -> City';
-    } else if (this.activeZone === 'level2' && nearCampfire) {
-      contextHint = 'Waystation Brazier · Safe Warmth & +45% Highland Yield';
+    } else if (this.activeZone !== 'level1' && this.activeZone !== 'city' && nearCampfire) {
+      contextHint = `Waystation Brazier · Safe Warmth (${zSpec.difficultyMult}x Survival Zone)`;
     } else if (this.activeZone === 'city') {
       contextHint = 'Frostcave City · Visit Valkyra Emberwing for Wings of Fire Daily Quest or trade at Stalls [E]';
     }
@@ -8673,6 +9187,7 @@ export class FrostwoodEngine {
               : 0,
           respawnSeconds:
             activeBoss.state === 'ko' ? Math.max(0, Math.ceil(activeBoss.respawnTimer)) : 0,
+          tacticLabel: activeBoss.tacticLabel,
         } satisfies ZoneBossHudInfo;
       })(),
       bossBlip: (() => {
@@ -8746,6 +9261,7 @@ export class FrostwoodEngine {
       achievements: achievementEval.entries,
       achievementsUnlockedCount: achievementEval.unlockedIds.length,
       pets: petsHud,
+      chatLogs: this.chatLogs.slice(-40),
       toastText: this.toastText,
     };
   }

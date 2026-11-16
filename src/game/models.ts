@@ -8769,6 +8769,8 @@ export interface ZoneBossModel {
   headPivot: THREE.Group;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;
+  leftLegPivot: THREE.Group;
+  rightLegPivot: THREE.Group;
   orbitGroup: THREE.Group;
   auraRingMesh: THREE.Mesh;
   auraRingMat: THREE.MeshBasicMaterial;
@@ -8876,13 +8878,22 @@ export function createTimberColossusModel(palette: MaterialPalette): ZoneBossMod
   const bodyPivot = new THREE.Group();
   group.add(bodyPivot);
 
-  // Heavy gnarled trunk legs & root feet
-  for (const side of [-1, 1] as const) {
+  // Heavy gnarled trunk legs & root feet with articulated hip pivots
+  const makeColossusLeg = (side: -1 | 1): THREE.Group => {
+    const legPivot = new THREE.Group();
+    legPivot.position.set(side * 0.72, 1.32, 0);
+
+    const hipJoint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 8, 6),
+      mossStoneMat,
+    );
+    hipJoint.position.set(0, 0, 0);
+
     const leg = new THREE.Mesh(
       new THREE.CylinderGeometry(0.42, 0.62, 1.35, 8),
       elderBarkMat,
     );
-    leg.position.set(side * 0.72, 0.68, 0);
+    leg.position.set(0, -0.64, 0);
     leg.castShadow = true;
     leg.receiveShadow = true;
 
@@ -8891,10 +8902,14 @@ export function createTimberColossusModel(palette: MaterialPalette): ZoneBossMod
       mossStoneMat,
     );
     foot.scale.set(1.05, 0.55, 1.35);
-    foot.position.set(side * 0.75, 0.2, 0.18);
+    foot.position.set(side * 0.03, -1.12, 0.18);
     foot.castShadow = true;
-    bodyPivot.add(leg, foot);
-  }
+    legPivot.add(hipJoint, leg, foot);
+    return legPivot;
+  };
+  const leftLegPivot = makeColossusLeg(-1);
+  const rightLegPivot = makeColossusLeg(1);
+  bodyPivot.add(leftLegPivot, rightLegPivot);
 
   // Barrel-chested elderwood ribcage torso with glowing amber resin core
   const torso = new THREE.Mesh(
@@ -9005,6 +9020,8 @@ export function createTimberColossusModel(palette: MaterialPalette): ZoneBossMod
     headPivot,
     leftArmPivot,
     rightArmPivot,
+    leftLegPivot,
+    rightLegPivot,
     orbitGroup,
     auraRingMesh,
     auraRingMat,
@@ -9062,7 +9079,7 @@ export function createCryoSovereignModel(palette: MaterialPalette): ZoneBossMode
   bodyPivot.position.y = 0.35;
   group.add(bodyPivot);
 
-  // Floating Crystal Dress Mantle (layered inverted ice cones)
+  // Floating Crystal Dress Mantle + Articulated Lower Ice Greave Tassets
   const robeLower = new THREE.Mesh(
     new THREE.ConeGeometry(1.18, 2.15, 7),
     glacialArmorMat,
@@ -9071,6 +9088,23 @@ export function createCryoSovereignModel(palette: MaterialPalette): ZoneBossMode
   robeLower.position.y = 1.25;
   robeLower.castShadow = true;
   bodyPivot.add(robeLower);
+
+  const makeCryoLegTasset = (side: -1 | 1): THREE.Group => {
+    const legPivot = new THREE.Group();
+    legPivot.position.set(side * 0.48, 1.35, 0.12);
+    const crystalGreave = new THREE.Mesh(
+      new THREE.ConeGeometry(0.24, 1.15, 5),
+      crystalMat,
+    );
+    crystalGreave.rotation.x = Math.PI;
+    crystalGreave.position.set(0, -0.55, 0);
+    crystalGreave.castShadow = true;
+    legPivot.add(crystalGreave);
+    return legPivot;
+  };
+  const leftLegPivot = makeCryoLegTasset(-1);
+  const rightLegPivot = makeCryoLegTasset(1);
+  bodyPivot.add(leftLegPivot, rightLegPivot);
 
   const bust = new THREE.Mesh(
     new THREE.CylinderGeometry(0.68, 0.52, 1.1, 8),
@@ -9180,6 +9214,8 @@ export function createCryoSovereignModel(palette: MaterialPalette): ZoneBossMode
     headPivot,
     leftArmPivot,
     rightArmPivot,
+    leftLegPivot,
+    rightLegPivot,
     orbitGroup,
     auraRingMesh,
     auraRingMat,
@@ -9234,18 +9270,27 @@ export function createCavernWardenModel(palette: MaterialPalette): ZoneBossModel
   const bodyPivot = new THREE.Group();
   group.add(bodyPivot);
 
-  // Armored Greave Legs
-  for (const side of [-1, 1] as const) {
+  // Articulated Armored Greave Legs & Sabaton Boots
+  const makeWardenLeg = (side: -1 | 1): THREE.Group => {
+    const legPivot = new THREE.Group();
+    legPivot.position.set(side * 0.68, 1.3, 0);
     const leg = new THREE.Mesh(
       new THREE.CylinderGeometry(0.36, 0.48, 1.3, 8),
       obsidianMat,
     );
-    leg.position.set(side * 0.68, 0.65, 0);
+    leg.position.set(0, -0.65, 0);
     leg.castShadow = true;
     const knee = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.34, 0.46), forgedBronzeMat);
-    knee.position.set(side * 0.68, 0.85, 0.14);
-    bodyPivot.add(leg, knee);
-  }
+    knee.position.set(0, -0.45, 0.14);
+    const sabaton = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.28, 0.82), forgedBronzeMat);
+    sabaton.position.set(0, -1.18, 0.16);
+    sabaton.castShadow = true;
+    legPivot.add(leg, knee, sabaton);
+    return legPivot;
+  };
+  const leftLegPivot = makeWardenLeg(-1);
+  const rightLegPivot = makeWardenLeg(1);
+  bodyPivot.add(leftLegPivot, rightLegPivot);
 
   // Broad Furnace Breastplate + Magma Grate Core
   const chest = new THREE.Mesh(
@@ -9369,6 +9414,8 @@ export function createCavernWardenModel(palette: MaterialPalette): ZoneBossModel
     headPivot,
     leftArmPivot,
     rightArmPivot,
+    leftLegPivot,
+    rightLegPivot,
     orbitGroup,
     auraRingMesh,
     auraRingMat,

@@ -582,8 +582,25 @@ export function pickDynamicWildlifeSpawn(
   zone: ZoneId = 'level1',
 ): AnimalKind | null {
   const roll = rng();
-  const rarityZoneScale = zone === 'level2' ? 2.4 : 1.0;
-  const maxActiveBonus = zone === 'level2' ? 1 : 0;
+  const isHighZone = zone !== 'level1' && zone !== 'city';
+  const rarityZoneScale =
+    zone === 'level5'
+      ? 4.8
+      : zone === 'level4'
+        ? 3.8
+        : zone === 'level3'
+          ? 3.0
+          : zone === 'level2'
+            ? 2.4
+            : 1.0;
+  const maxActiveBonus =
+    zone === 'level5'
+      ? 3
+      : zone === 'level4' || zone === 'level3'
+        ? 2
+        : zone === 'level2'
+          ? 1
+          : 0;
   let cumulative = 0;
   for (const kind of RARE_AND_EPIC_SPECIES) {
     const spec = SPECIES_SPECS[kind];
@@ -597,31 +614,65 @@ export function pickDynamicWildlifeSpawn(
 
   const night = computeNightFactor(timeOfDay);
   const candidates: AnimalKind[] =
-    zone === 'level2'
-      ? ['wolf', 'lynx', 'frost_stag', 'musk_ox', 'polar_bear', 'fox', 'hare']
-      : night > 0.45
-        ? ['wolf', 'lynx', 'fox', 'hare', 'stag']
-        : ['hare', 'fox', 'stag', 'wolf', 'lynx'];
+    zone === 'level5' || zone === 'level4'
+      ? ['wolf', 'lynx', 'polar_bear', 'sabertooth', 'mammoth', 'frost_stag', 'musk_ox', 'fox']
+      : zone === 'level3' || zone === 'level2'
+        ? ['wolf', 'lynx', 'frost_stag', 'musk_ox', 'polar_bear', 'fox', 'hare']
+        : night > 0.45
+          ? ['wolf', 'lynx', 'fox', 'hare', 'stag']
+          : ['hare', 'fox', 'stag', 'wolf', 'lynx'];
 
-  const level2BaselineTargets: Partial<Record<AnimalKind, number>> = {
-    hare: 3,
-    fox: 3,
-    wolf: 4,
-    lynx: 3,
-    frost_stag: 2,
-    musk_ox: 2,
-    polar_bear: 1,
-  };
+  const highZoneBaselineTargets: Partial<Record<AnimalKind, number>> =
+    zone === 'level5'
+      ? {
+          wolf: 5,
+          lynx: 4,
+          polar_bear: 3,
+          sabertooth: 2,
+          mammoth: 2,
+          frost_stag: 2,
+          musk_ox: 2,
+          fox: 2,
+        }
+      : zone === 'level4'
+        ? {
+            wolf: 5,
+            lynx: 4,
+            polar_bear: 2,
+            sabertooth: 2,
+            mammoth: 1,
+            frost_stag: 2,
+            musk_ox: 2,
+            fox: 2,
+          }
+        : zone === 'level3'
+          ? {
+              hare: 2,
+              fox: 3,
+              wolf: 5,
+              lynx: 3,
+              frost_stag: 2,
+              musk_ox: 2,
+              polar_bear: 2,
+            }
+          : {
+              hare: 3,
+              fox: 3,
+              wolf: 4,
+              lynx: 3,
+              frost_stag: 2,
+              musk_ox: 2,
+              polar_bear: 1,
+            };
 
   let bestKind: AnimalKind | null = null;
   let bestWeightedDeficit = 0;
   for (const kind of candidates) {
     const spec = SPECIES_SPECS[kind];
     const timeProfile = computeWildlifeTimeProfile(timeOfDay, kind);
-    const baseTarget =
-      zone === 'level2'
-        ? (level2BaselineTargets[kind] ?? spec.targetCount)
-        : spec.targetCount;
+    const baseTarget = isHighZone
+      ? (highZoneBaselineTargets[kind] ?? spec.targetCount)
+      : spec.targetCount;
     // At night, active nocturnal predators get +1 dynamic pack cap; diurnal prey scale slightly down
     const dynamicTarget =
       spec.predator && night > 0.55
@@ -663,79 +714,154 @@ export interface HabitatAnchorZone {
 }
 
 export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
-  // Level 1: Frostwood Valley (116m radius) curated dens & warrens
+  // Level 1: Expanded Frostwood Valley (156m radius) curated dens & warrens
   {
     id: 'meadow_warrens_west',
     zone: 'level1',
-    xOffset: -42,
-    zOffset: 24,
-    radius: 20,
+    xOffset: -62,
+    zOffset: 34,
+    radius: 26,
     species: ['hare', 'fox', 'stag'],
   },
   {
     id: 'meadow_warrens_south',
     zone: 'level1',
-    xOffset: 28,
-    zOffset: 54,
-    radius: 22,
+    xOffset: 42,
+    zOffset: 78,
+    radius: 28,
     species: ['hare', 'fox', 'stag', 'frost_stag'],
   },
   {
     id: 'whispering_pine_nw',
     zone: 'level1',
-    xOffset: -58,
-    zOffset: -46,
-    radius: 24,
+    xOffset: -82,
+    zOffset: -64,
+    radius: 30,
     species: ['fox', 'stag', 'wolf', 'lynx'],
   },
   {
     id: 'wolf_den_sw',
     zone: 'level1',
-    xOffset: -64,
-    zOffset: 52,
-    radius: 22,
+    xOffset: -88,
+    zOffset: 74,
+    radius: 28,
     species: ['wolf', 'lynx', 'sabertooth', 'musk_ox'],
   },
   {
     id: 'frost_ridge_ne',
     zone: 'level1',
-    xOffset: 54,
-    zOffset: -58,
-    radius: 24,
+    xOffset: 78,
+    zOffset: -82,
+    radius: 30,
     species: ['wolf', 'polar_bear', 'frost_stag', 'aurora_fenrir'],
   },
   {
     id: 'mammoth_hollow_se',
     zone: 'level1',
-    xOffset: 66,
-    zOffset: 56,
-    radius: 22,
+    xOffset: 92,
+    zOffset: 78,
+    radius: 28,
     species: ['musk_ox', 'mammoth', 'stag', 'hare'],
   },
-  // Level 2: Glacial Highlands (102m radius) curated dens
+  // Level 2: Expanded Glacial Highlands (138m radius) curated dens
   {
     id: 'glacier_basin_west',
     zone: 'level2',
-    xOffset: -52,
-    zOffset: -18,
-    radius: 22,
+    xOffset: -72,
+    zOffset: -26,
+    radius: 28,
     species: ['wolf', 'lynx', 'musk_ox', 'polar_bear'],
   },
   {
     id: 'aurora_shrine_north',
     zone: 'level2',
-    xOffset: 8,
-    zOffset: -64,
-    radius: 24,
+    xOffset: 12,
+    zOffset: -88,
+    radius: 30,
     species: ['aurora_fenrir', 'frost_stag', 'sabertooth', 'mammoth'],
   },
   {
     id: 'ice_crags_east',
     zone: 'level2',
-    xOffset: 54,
-    zOffset: 16,
-    radius: 22,
+    xOffset: 76,
+    zOffset: 24,
+    radius: 28,
     species: ['hare', 'fox', 'lynx', 'polar_bear', 'musk_ox'],
+  },
+  // Level 3: Rimefang Abyss (140m radius, 9x Difficulty) curated dens
+  {
+    id: 'rimefang_trench_nw',
+    zone: 'level3',
+    xOffset: -68,
+    zOffset: -58,
+    radius: 30,
+    species: ['wolf', 'lynx', 'polar_bear', 'sabertooth'],
+  },
+  {
+    id: 'abyssal_shelf_south',
+    zone: 'level3',
+    xOffset: -24,
+    zOffset: 72,
+    radius: 28,
+    species: ['musk_ox', 'frost_stag', 'mammoth', 'fox'],
+  },
+  {
+    id: 'frozen_fang_ne',
+    zone: 'level3',
+    xOffset: 62,
+    zOffset: -66,
+    radius: 28,
+    species: ['aurora_fenrir', 'polar_bear', 'wolf', 'hare'],
+  },
+  // Level 4: Obsidian Permafrost (144m radius, 27x Difficulty) curated dens
+  {
+    id: 'obsidian_crags_west',
+    zone: 'level4',
+    xOffset: -78,
+    zOffset: -24,
+    radius: 30,
+    species: ['sabertooth', 'polar_bear', 'wolf', 'lynx'],
+  },
+  {
+    id: 'permafrost_caldera_south',
+    zone: 'level4',
+    xOffset: 18,
+    zOffset: 82,
+    radius: 30,
+    species: ['mammoth', 'musk_ox', 'aurora_fenrir', 'frost_stag'],
+  },
+  {
+    id: 'basalt_ridge_east',
+    zone: 'level4',
+    xOffset: 74,
+    zOffset: 42,
+    radius: 28,
+    species: ['wolf', 'lynx', 'polar_bear', 'fox'],
+  },
+  // Level 5: Starfall Eternal Zero (148m radius, 81x Difficulty) curated dens
+  {
+    id: 'starfall_glacier_north',
+    zone: 'level5',
+    xOffset: 14,
+    zOffset: -86,
+    radius: 32,
+    species: ['aurora_fenrir', 'mammoth', 'sabertooth', 'polar_bear'],
+  },
+  {
+    id: 'eternal_zero_east',
+    zone: 'level5',
+    xOffset: 84,
+    zOffset: 18,
+    radius: 30,
+    species: ['polar_bear', 'sabertooth', 'wolf', 'lynx'],
+  },
+  {
+    id: 'celestial_drift_south',
+    zone: 'level5',
+    xOffset: -28,
+    zOffset: 84,
+    radius: 30,
+    species: ['frost_stag', 'musk_ox', 'mammoth', 'aurora_fenrir'],
   },
 ];
 
@@ -798,6 +924,8 @@ export function pickHabitatRespawnPoint(input: {
   hearthZ: number;
   portalX?: number;
   portalZ?: number;
+  forwardPortalX?: number;
+  forwardPortalZ?: number;
   cityPortalX?: number;
   cityPortalZ?: number;
   playerX: number;
@@ -817,6 +945,8 @@ export function pickHabitatRespawnPoint(input: {
     hearthZ,
     portalX,
     portalZ,
+    forwardPortalX,
+    forwardPortalZ,
     cityPortalX,
     cityPortalZ,
     playerX,
@@ -832,19 +962,38 @@ export function pickHabitatRespawnPoint(input: {
   );
   const spec = SPECIES_SPECS[kind];
   const scale = zoneRadius / 50;
+  // Scale habitat anchor offsets proportionally if a smaller test zoneRadius is passed
+  const nominalRadius =
+    zone === 'level1'
+      ? 156
+      : zone === 'level2'
+        ? 138
+        : zone === 'level3'
+          ? 140
+          : zone === 'level4'
+            ? 144
+            : 148;
+  const anchorScale = Math.min(1.0, zoneRadius / nominalRadius);
 
   if (matchingZones.length > 0) {
     for (let attempt = 0; attempt < 20; attempt++) {
       const anchor = matchingZones[Math.floor(rng() * matchingZones.length)];
       const angle = rng() * Math.PI * 2;
-      const dist = Math.sqrt(rng()) * anchor.radius;
-      const x = centerX + anchor.xOffset + Math.cos(angle) * dist;
-      const z = centerZ + anchor.zOffset + Math.sin(angle) * dist;
+      const dist = Math.sqrt(rng()) * anchor.radius * anchorScale;
+      const x = centerX + anchor.xOffset * anchorScale + Math.cos(angle) * dist;
+      const z = centerZ + anchor.zOffset * anchorScale + Math.sin(angle) * dist;
 
       if (Math.hypot(x - centerX, z - centerZ) > zoneRadius - 4.5) continue;
       if (Math.hypot(x - hearthX, z - hearthZ) < 18) continue;
       if (Math.hypot(x - playerX, z - playerZ) < minPlayerDist) continue;
       if (portalX !== undefined && portalZ !== undefined && Math.hypot(x - portalX, z - portalZ) < 9) {
+        continue;
+      }
+      if (
+        forwardPortalX !== undefined &&
+        forwardPortalZ !== undefined &&
+        Math.hypot(x - forwardPortalX, z - forwardPortalZ) < 9
+      ) {
         continue;
       }
       if (
