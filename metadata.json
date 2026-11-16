@@ -1,0 +1,8 @@
+{
+  "name": "Frostwood Tycoon",
+  "description": "A 3D winter forest tycoon game where you fell timber, hunt Arctic wildlife, and build a thriving alpine homestead.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
