@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  computeHunterTacticalMovement,
+  computeNpcWaypointSteering,
   computeRivalHunterDefeatLoot,
   createEmptyStolenBag,
   pickRivalHunterArchetype,
@@ -75,3 +77,103 @@ test('rollRareEnemyAmbush enforces active cap and skips city safe zone', () => {
   const spawned = rollRareEnemyAmbush('level1', 0, () => 0.02);
   assert.equal(spawned?.id, 'aurora_warlock');
 });
+
+test('computeHunterTacticalMovement executes sprint lunge in melee burst band and kites when ranged too close', () => {
+  const lunge = computeHunterTacticalMovement({
+    x: 0,
+    z: 20,
+    vx: 0,
+    vz: 0,
+    yaw: Math.PI,
+    playerX: 0,
+    playerZ: 16.5,
+    zoneCenterX: 0,
+    zoneCenterZ: 0,
+    clearingRadius: 12,
+    zoneRadius: 90,
+    archetype: RIVAL_HUNTER_ARCHETYPES.raider,
+    hp: 200,
+    maxHp: 200,
+    stolenValue: 0,
+    attackCooldown: 0,
+    strafeSign: 1,
+    phaseTime: 0.5,
+    dt: 0.05,
+    obstacles: [],
+  });
+  assert.equal(lunge.isLunging, true);
+  assert.ok(lunge.vz < 0);
+
+  const rangedKite = computeHunterTacticalMovement({
+    x: 0,
+    z: 23,
+    vx: 0,
+    vz: 0,
+    yaw: Math.PI,
+    playerX: 0,
+    playerZ: 20,
+    zoneCenterX: 0,
+    zoneCenterZ: 0,
+    clearingRadius: 12,
+    zoneRadius: 90,
+    archetype: RIVAL_HUNTER_ARCHETYPES.aurora_warlock,
+    hp: 300,
+    maxHp: 300,
+    stolenValue: 0,
+    attackCooldown: 0.4,
+    strafeSign: 1,
+    phaseTime: 1.0,
+    dt: 0.05,
+    obstacles: [],
+  });
+  assert.equal(rangedKite.isKiting, true);
+  assert.ok(rangedKite.vz > 0);
+});
+
+test('computeNpcWaypointSteering steers around obstacles and decelerates cleanly on arrival', () => {
+  const steer = computeNpcWaypointSteering({
+    x: 0,
+    z: 5,
+    vx: 0,
+    vz: -2,
+    yaw: Math.PI,
+    targetX: 0,
+    targetZ: 0,
+    desiredSpeed: 3.2,
+    dt: 0.05,
+    obstacles: [{ x: 0, z: 3.8, radius: 1.2 }],
+  });
+  assert.equal(steer.reached, false);
+  assert.ok(Number.isFinite(steer.turnBank));
+});
+
+test('computeNpcWaypointSteering reaches full cruising speed with persistent velocity and sidesteps head-on obstacles', () => {
+  let vx = 0;
+  let vz = 0;
+  let x = 0;
+  let z = 11;
+  let yaw = Math.PI;
+  for (let step = 0; step < 65; step++) {
+    const res = computeNpcWaypointSteering({
+      x,
+      z,
+      vx,
+      vz,
+      yaw,
+      targetX: 0,
+      targetZ: 0,
+      maxSpeed: 3.0,
+      dt: 0.03,
+      obstacles: [{ x: 0, z: 6, radius: 1.3 }],
+    });
+    vx = res.vx;
+    vz = res.vz;
+    x += vx * 0.03;
+    z += vz * 0.03;
+    yaw = res.desiredYaw;
+  }
+  const speed = Math.hypot(vx, vz);
+  assert.ok(speed > 2.2, `Expected NPC to cruise smoothly above 2.2 m/s, got ${speed}`);
+  assert.ok(Math.abs(x) > 0.25, 'NPC should sidestep tangentially around head-on obstacle');
+});
+

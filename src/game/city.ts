@@ -9,7 +9,18 @@ import type {
   ItemRarity,
   ResourceCounts,
 } from './types';
+import {
+  CITY_CHIBI_NPC_ARCHETYPES,
+  pickRandomChibiNpcArchetype,
+  type ChibiNpcArchetype,
+} from './characterRig';
 import { CITY_CENTER_X, CITY_CENTER_Z } from './zones';
+import {
+  FROSTHAVEN_NPCS,
+  type FrosthavenNpcDefinition,
+} from './npcs';
+
+export { FROSTHAVEN_NPCS, type FrosthavenNpcDefinition };
 
 export const CITY_TRADER_INTERACT_RADIUS = 5.4;
 export const CITY_NPC_INTERACT_RADIUS = 4.6;
@@ -745,3 +756,368 @@ export function completeCityDailyQuest(params: {
   };
 }
 
+// =============================================================================
+// RANDOMIZED CHIBI CITY NPC SPAWNING & VARIED PBR MATERIAL SETS
+// =============================================================================
+
+export type CityChibiPbrMaterialSetId =
+  | 'frosted_wool_brass'
+  | 'glacier_leather_steel'
+  | 'crimson_hearth_velvet'
+  | 'pine_ranger_fur'
+  | 'royal_indigo_brocade'
+  | 'amber_forge_plate'
+  | 'aurora_weaver_silk'
+  | 'ember_herald_regalia';
+
+export interface CityChibiNpcPbrMaterialSet {
+  id: CityChibiPbrMaterialSetId;
+  label: string;
+  albedoTintHex: number;
+  tintStrength: number;
+  roughnessMin: number;
+  roughnessMax: number;
+  metalnessMax: number;
+  clearcoat: number;
+  clearcoatRoughness: number;
+  sheen: number;
+  sheenColorHex: number;
+  envMapIntensity: number;
+  emissiveHex?: number;
+  emissiveIntensity?: number;
+}
+
+/**
+ * Curated varied PBR material sets applied onto Frostcave City's randomized chibi NPCs.
+ * Every set pairs physically calibrated roughness/metalness/sheen/clearcoat bounds with a
+ * winter-harmonized albedo tint so each citizen, merchant, and herald has tactile material variety.
+ */
+export const CITY_CHIBI_PBR_MATERIAL_SETS: readonly CityChibiNpcPbrMaterialSet[] = [
+  {
+    id: 'frosted_wool_brass',
+    label: 'Frosted Wool & Brass',
+    albedoTintHex: 0xbfdbfe,
+    tintStrength: 0.24,
+    roughnessMin: 0.62,
+    roughnessMax: 0.92,
+    metalnessMax: 0.24,
+    clearcoat: 0.08,
+    clearcoatRoughness: 0.55,
+    sheen: 0.42,
+    sheenColorHex: 0xdbeafe,
+    envMapIntensity: 0.92,
+  },
+  {
+    id: 'glacier_leather_steel',
+    label: 'Glacier Leather & Steel',
+    albedoTintHex: 0x7dd3fc,
+    tintStrength: 0.26,
+    roughnessMin: 0.42,
+    roughnessMax: 0.78,
+    metalnessMax: 0.44,
+    clearcoat: 0.24,
+    clearcoatRoughness: 0.34,
+    sheen: 0.18,
+    sheenColorHex: 0xbae6fd,
+    envMapIntensity: 1.05,
+  },
+  {
+    id: 'crimson_hearth_velvet',
+    label: 'Crimson Hearth Velvet',
+    albedoTintHex: 0xfca5a5,
+    tintStrength: 0.28,
+    roughnessMin: 0.58,
+    roughnessMax: 0.88,
+    metalnessMax: 0.22,
+    clearcoat: 0.1,
+    clearcoatRoughness: 0.5,
+    sheen: 0.56,
+    sheenColorHex: 0xfecaca,
+    envMapIntensity: 0.94,
+  },
+  {
+    id: 'pine_ranger_fur',
+    label: 'Pine Ranger Fur & Hide',
+    albedoTintHex: 0x86efac,
+    tintStrength: 0.24,
+    roughnessMin: 0.68,
+    roughnessMax: 0.94,
+    metalnessMax: 0.16,
+    clearcoat: 0.05,
+    clearcoatRoughness: 0.65,
+    sheen: 0.48,
+    sheenColorHex: 0xdcfce7,
+    envMapIntensity: 0.88,
+  },
+  {
+    id: 'royal_indigo_brocade',
+    label: 'Royal Indigo Brocade',
+    albedoTintHex: 0xc4b5fd,
+    tintStrength: 0.27,
+    roughnessMin: 0.48,
+    roughnessMax: 0.82,
+    metalnessMax: 0.32,
+    clearcoat: 0.18,
+    clearcoatRoughness: 0.4,
+    sheen: 0.52,
+    sheenColorHex: 0xede9fe,
+    envMapIntensity: 1.0,
+  },
+  {
+    id: 'amber_forge_plate',
+    label: 'Amber Forge Plate',
+    albedoTintHex: 0xfde68a,
+    tintStrength: 0.25,
+    roughnessMin: 0.36,
+    roughnessMax: 0.72,
+    metalnessMax: 0.52,
+    clearcoat: 0.28,
+    clearcoatRoughness: 0.28,
+    sheen: 0.15,
+    sheenColorHex: 0xfef3c7,
+    envMapIntensity: 1.12,
+  },
+  {
+    id: 'aurora_weaver_silk',
+    label: 'Aurora Weaver Silk',
+    albedoTintHex: 0x99f6e4,
+    tintStrength: 0.26,
+    roughnessMin: 0.44,
+    roughnessMax: 0.78,
+    metalnessMax: 0.28,
+    clearcoat: 0.22,
+    clearcoatRoughness: 0.36,
+    sheen: 0.6,
+    sheenColorHex: 0xccfbf1,
+    envMapIntensity: 1.04,
+    emissiveHex: 0x0e7490,
+    emissiveIntensity: 0.04,
+  },
+  {
+    id: 'ember_herald_regalia',
+    label: 'Ember Herald Regalia',
+    albedoTintHex: 0xfb923c,
+    tintStrength: 0.28,
+    roughnessMin: 0.34,
+    roughnessMax: 0.7,
+    metalnessMax: 0.48,
+    clearcoat: 0.32,
+    clearcoatRoughness: 0.24,
+    sheen: 0.36,
+    sheenColorHex: 0xfed7aa,
+    envMapIntensity: 1.15,
+    emissiveHex: 0x9a3412,
+    emissiveIntensity: 0.1,
+  },
+];
+
+export interface CityChibiNpcSpawnSpec {
+  npcId: string;
+  role: 'trader' | 'citizen' | 'quest_herald';
+  /** Consistent KayKit Rig_Medium chibi skeletal archetype. */
+  archetype: ChibiNpcArchetype;
+  /** Consistent skeleton rig identifier shared across all city chibi models. */
+  rigProfile: 'kaykit_rig_medium_chibi';
+  /** Varied PBR material set applied to the chibi meshes. */
+  materialSet: CityChibiNpcPbrMaterialSet;
+  /** Subtle per-NPC chibi height variation (0.95..1.05) for lively crowd silhouette. */
+  scaleFactor: number;
+  attachWings: boolean;
+}
+
+export interface CityNpcSpawnManifest {
+  traders: Record<CityTraderId, CityChibiNpcSpawnSpec>;
+  citizens: CityChibiNpcSpawnSpec[];
+  questHerald: CityChibiNpcSpawnSpec;
+}
+
+export function pickCityChibiPbrMaterialSet(
+  rng: () => number = Math.random,
+  excludeIds: readonly CityChibiPbrMaterialSetId[] = [],
+  allowHeraldSet = false,
+): CityChibiNpcPbrMaterialSet {
+  const excluded = new Set(excludeIds);
+  const candidates = CITY_CHIBI_PBR_MATERIAL_SETS.filter(
+    (s) =>
+      (allowHeraldSet || s.id !== 'ember_herald_regalia') &&
+      !excluded.has(s.id),
+  );
+  const pool =
+    candidates.length > 0
+      ? candidates
+      : CITY_CHIBI_PBR_MATERIAL_SETS.filter(
+          (s) => allowHeraldSet || s.id !== 'ember_herald_regalia',
+        );
+  const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * pool.length);
+  return pool[idx] ?? CITY_CHIBI_PBR_MATERIAL_SETS[0];
+}
+
+export function resolveCityChibiNpcSpawn(options: {
+  npcId: string;
+  role: 'trader' | 'citizen' | 'quest_herald';
+  rng?: () => number;
+  excludeArchetypeId?: ChibiNpcArchetype['id'];
+  excludeMaterialSetIds?: readonly CityChibiPbrMaterialSetId[];
+  preferredTintHex?: number;
+  forceMaterialSetId?: CityChibiPbrMaterialSetId;
+  attachWings?: boolean;
+}): CityChibiNpcSpawnSpec {
+  const rng = options.rng ?? Math.random;
+  const picked = pickRandomChibiNpcArchetype(rng, options.excludeArchetypeId);
+  const forcedSet = options.forceMaterialSetId
+    ? CITY_CHIBI_PBR_MATERIAL_SETS.find((s) => s.id === options.forceMaterialSetId)
+    : undefined;
+  const baseSet =
+    forcedSet ??
+    pickCityChibiPbrMaterialSet(
+      rng,
+      options.excludeMaterialSetIds ?? [],
+      options.role === 'quest_herald',
+    );
+  const materialSet: CityChibiNpcPbrMaterialSet =
+    options.preferredTintHex !== undefined
+      ? { ...baseSet, albedoTintHex: options.preferredTintHex }
+      : baseSet;
+
+  const scaleJitter = 0.96 + Math.max(0, Math.min(1, rng())) * 0.08;
+  return {
+    npcId: options.npcId,
+    role: options.role,
+    archetype: picked.archetype,
+    rigProfile: 'kaykit_rig_medium_chibi',
+    materialSet,
+    scaleFactor: options.role === 'quest_herald' ? 1.04 : Number(scaleJitter.toFixed(3)),
+    attachWings: options.attachWings === true,
+  };
+}
+
+/**
+ * Generates a complete randomized spawn manifest for all Frostcave City NPCs
+ * (traders, patrolling citizens, and Valkyra Emberwing) ensuring:
+ * - Every NPC uses a high-quality chibi GLB with the consistent KayKit Rig_Medium skeleton.
+ * - Adjacent traders and citizens receive varied chibi archetypes and distinct PBR material sets.
+ */
+export function generateCityNpcSpawnManifest(
+  rng: () => number = Math.random,
+): CityNpcSpawnManifest {
+  // Shuffle chibi archetype order so every city trader gets a distinct chibi silhouette
+  const shuffledArchetypes = [...CITY_CHIBI_NPC_ARCHETYPES];
+  for (let i = shuffledArchetypes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.max(0, Math.min(0.999999, rng())) * (i + 1));
+    const tmp = shuffledArchetypes[i];
+    shuffledArchetypes[i] = shuffledArchetypes[j];
+    shuffledArchetypes[j] = tmp;
+  }
+
+  const usedTraderSets: CityChibiPbrMaterialSetId[] = [];
+  const traders = {} as Record<CityTraderId, CityChibiNpcSpawnSpec>;
+  for (let i = 0; i < CITY_TRADER_ORDER.length; i++) {
+    const traderId = CITY_TRADER_ORDER[i];
+    const spec = CITY_TRADERS[traderId];
+    const archetype = shuffledArchetypes[i % shuffledArchetypes.length];
+    const baseSet = pickCityChibiPbrMaterialSet(rng, usedTraderSets, false);
+    usedTraderSets.push(baseSet.id);
+    const scaleJitter = 0.97 + Math.max(0, Math.min(1, rng())) * 0.07;
+
+    traders[traderId] = {
+      npcId: traderId,
+      role: 'trader',
+      archetype,
+      rigProfile: 'kaykit_rig_medium_chibi',
+      materialSet: {
+        ...baseSet,
+        albedoTintHex: spec.accentHex,
+      },
+      scaleFactor: Number(scaleJitter.toFixed(3)),
+      attachWings: false,
+    };
+  }
+
+  // Patrolling city citizens — randomized chibi models + varied PBR material sets
+  const citizens: CityChibiNpcSpawnSpec[] = [];
+  let prevArch: ChibiNpcArchetype['id'] | undefined;
+  const recentSets: CityChibiPbrMaterialSetId[] = [];
+  for (let i = 0; i < CITY_AMBIENT_NPCS.length; i++) {
+    const citizenSpec = CITY_AMBIENT_NPCS[i];
+    const spawn = resolveCityChibiNpcSpawn({
+      npcId: citizenSpec.id,
+      role: 'citizen',
+      rng,
+      excludeArchetypeId: prevArch,
+      excludeMaterialSetIds: recentSets.slice(-3),
+    });
+    prevArch = spawn.archetype.id;
+    recentSets.push(spawn.materialSet.id);
+    citizens.push(spawn);
+  }
+
+  // Valkyra Emberwing — randomized non-barbarian chibi herald rig with Ember Herald PBR regalia & wings
+  const questHerald = resolveCityChibiNpcSpawn({
+    npcId: CITY_QUEST_NPC.id,
+    role: 'quest_herald',
+    rng,
+    excludeArchetypeId: 'barbarian',
+    forceMaterialSetId: 'ember_herald_regalia',
+    attachWings: true,
+  });
+
+  return {
+    traders,
+    citizens,
+    questHerald,
+  };
+}
+
+
+
+export interface FrosthavenNpcSpawnRecord extends CityChibiNpcSpawnSpec {
+  definition: FrosthavenNpcDefinition;
+}
+
+/**
+ * Generates randomized chibi spawn specifications for all FROSTHAVEN_NPCS defined in npcs.ts.
+ */
+export function generateFrosthavenNpcManifest(
+  rng: () => number = Math.random,
+): FrosthavenNpcSpawnRecord[] {
+  const records: FrosthavenNpcSpawnRecord[] = [];
+  let prevArch: ChibiNpcArchetype['id'] | undefined;
+  const recentSets: CityChibiPbrMaterialSetId[] = [];
+
+  for (const def of FROSTHAVEN_NPCS) {
+    const spawn = resolveCityChibiNpcSpawn({
+      npcId: def.id,
+      role: def.role === 'leader' || def.role === 'doctor' || def.role === 'merchant' ? 'trader' : 'citizen',
+      rng,
+      excludeArchetypeId: prevArch,
+      excludeMaterialSetIds: recentSets.slice(-3),
+    });
+    prevArch = spawn.archetype.id;
+    recentSets.push(spawn.materialSet.id);
+    records.push({
+      ...spawn,
+      definition: def,
+    });
+  }
+  return records;
+}
+
+export function resolveNpcPositionBySchedule(
+  npc: FrosthavenNpcDefinition,
+  currentHour: number,
+): { x: number; z: number; locationName: string; activity: string } {
+  const hour = Math.max(0, Math.min(23.99, currentHour));
+  for (const entry of npc.schedule) {
+    if (entry.startHour <= entry.endHour) {
+      if (hour >= entry.startHour && hour < entry.endHour) {
+        return { x: entry.x, z: entry.z, locationName: entry.locationName, activity: entry.activity };
+      }
+    } else {
+      // Crosses midnight (e.g. 20:00 to 06:00)
+      if (hour >= entry.startHour || hour < entry.endHour) {
+        return { x: entry.x, z: entry.z, locationName: entry.locationName, activity: entry.activity };
+      }
+    }
+  }
+  return { x: npc.baseX, z: npc.baseZ, locationName: 'Frosthaven Plaza', activity: 'Patrolling' };
+}

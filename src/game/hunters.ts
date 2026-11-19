@@ -355,3 +355,382 @@ export function computeRivalHunterDefeatLoot(
     gold: Math.round(archetype.rewardGold * zoneYieldMult) + stolenBag.gold,
   };
 }
+
+export interface HunterObstaclePoint {
+  x: number;
+  z: number;
+  radius: number;
+}
+
+export interface HunterTacticalMovementInput {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  yaw: number;
+  playerX: number;
+  playerZ: number;
+  zoneCenterX: number;
+  zoneCenterZ: number;
+  clearingRadius: number;
+  zoneRadius: number;
+  archetype: RivalHunterArchetypeSpec;
+  hp: number;
+  maxHp: number;
+  stolenValue: number;
+  attackCooldown: number;
+  strafeSign: 1 | -1;
+  phaseTime: number;
+  dt: number;
+  obstacles?: HunterObstaclePoint[];
+}
+
+export interface HunterTacticalMovementOutput {
+  state: 'stalking' | 'charging' | 'attacking' | 'fleeing';
+  vx: number;
+  vz: number;
+  speed: number;
+  targetYaw: number;
+  turnBank: number;
+  isLunging: boolean;
+  isKiting: boolean;
+}
+
+function wrapAngleRad(angle: number): number {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
+ * Computes tactical, obstacle-aware planar velocity, yaw, and turn-bank for Rival Hunters:
+ * - Ranged hunters (`bow` / `staff`) kite and strafe-orbit at 62%–88% of `attackRange`, backpedaling when the player closes in.
+ * - Melee hunters (`axe`) weave with an S-curve flank, trigger a 1.38x Sprint-Lunge burst when closing at 1.05x–2.2x range, and circle-strafe laterally between swings.
+ * - Smoothly repels around nearby trees/boulders and outside the camp hearth safe ring.
+ */
+export function computeHunterTacticalMovement(
+  input: HunterTacticalMovementInput,
+): HunterTacticalMovementOutput {
+  const {
+    x,
+    z,
+    vx,
+    vz,
+    yaw,
+    playerX,
+    playerZ,
+    zoneCenterX,
+    zoneCenterZ,
+    clearingRadius,
+    zoneRadius,
+    archetype,
+    hp,
+    maxHp,
+    stolenValue,
+    attackCooldown,
+    strafeSign,
+    phaseTime,
+    dt,
+    obstacles = [],
+  } = input;
+
+  const toPlayerX = playerX - x;
+  const toPlayerZ = playerZ - z;
+  const distToPlayer = Math.max(0.001, Math.hypot(toPlayerX, toPlayerZ));
+  const dirToPlayerX = toPlayerX / distToPlayer;
+  const dirToPlayerZ = toPlayerZ / distToPlayer;
+  // Perpendicular tangent vector for strafing/flanking
+  const perpX = -dirToPlayerZ * strafeSign;
+  const perpZ = dirToPlayerX * strafeSign;
+
+  const playerDistFromCamp = Math.hypot(playerX - zoneCenterX, playerZ - zoneCenterZ);
+  const playerInSafeHearth = playerDistFromCamp < clearingRadius - 1.5;
+
+  let state: 'stalking' | 'charging' | 'attacking' | 'fleeing' = 'stalking';
+  if (hp < maxHp * 0.22 && stolenValue > 0) {
+    state = 'fleeing';
+  } else if (playerInSafeHearth) {
+    state = 'stalking';
+  } else if (distToPlayer <= archetype.attackRange) {
+    state = 'attacking';
+  } else if (distToPlayer <= 42) {
+    state = 'charging';
+  } else {
+    state = 'stalking';
+  }
+
+  const isRanged = archetype.weapon === 'bow' || archetype.weapon === 'staff';
+  let desiredDirX = 0;
+  let desiredDirZ = 0;
+  let desiredSpeed = archetype.moveSpeed;
+  let isLunging = false;
+  let isKiting = false;
+
+  if (state === 'fleeing') {
+    // Sprint away from player with a weaving juke
+    const weave = Math.sin(phaseTime * 3.8) * 0.36;
+    desiredDirX = -dirToPlayerX + perpX * weave;
+    desiredDirZ = -dirToPlayerZ + perpZ * weave;
+    desiredSpeed = archetype.moveSpeed * 1.18;
+  } else if (playerInSafeHearth) {
+    // Prowl menacingly along the perimeter of the safe hearth ring
+    const fromCampX = x - zoneCenterX;
+    const fromCampZ = z - zoneCenterZ;
+    const campDist = Math.max(0.001, Math.hypot(fromCampX, fromCampZ));
+    const orbitRadius = clearingRadius + 6.5;
+    const radialPull = Math.max(-1, Math.min(1, (orbitRadius - campDist) * 0.25));
+    const tangX = (-fromCampZ / campDist) * strafeSign;
+    const tangZ = (fromCampX / campDist) * strafeSign;
+    desiredDirX = tangX + (fromCampX / campDist) * radialPull;
+    desiredDirZ = tangZ + (fromCampZ / campDist) * radialPull;
+    desiredSpeed = archetype.moveSpeed * 0.68;
+  } else if (isRanged) {
+    // Ranged tactical kiting & orbit strafing
+    const minKiteDist = archetype.attackRange * 0.54;
+    const idealMinDist = archetype.attackRange * 0.66;
+    const idealMaxDist = archetype.attackRange * 0.92;
+
+    if (distToPlayer < minKiteDist) {
+      // Player is too close: kite backwards while strafing
+      isKiting = true;
+      desiredDirX = -dirToPlayerX * 0.85 + perpX * 0.55;
+      desiredDirZ = -dirToPlayerZ * 0.85 + perpZ * 0.55;
+      desiredSpeed = archetype.moveSpeed * 1.04;
+    } else if (distToPlayer <= idealMaxDist) {
+      // Inside sweet spot: orbit-strafe laterally and adjust radial spacing
+      const radialBias =
+        distToPlayer < idealMinDist ? -0.32 : distToPlayer > archetype.attackRange * 0.82 ? 0.28 : 0;
+      desiredDirX = perpX * 0.92 + dirToPlayerX * radialBias;
+      desiredDirZ = perpZ * 0.92 + dirToPlayerZ * radialBias;
+      desiredSpeed = archetype.moveSpeed * (attackCooldown > 0.35 ? 0.78 : 0.45);
+    } else {
+      // Advance along a curved flank path into firing range
+      const flankBias = Math.sin(phaseTime * 2.1) * 0.38;
+      desiredDirX = dirToPlayerX + perpX * flankBias;
+      desiredDirZ = dirToPlayerZ + perpZ * flankBias;
+      desiredSpeed = archetype.moveSpeed * (state === 'charging' ? 1.05 : 0.72);
+    }
+  } else {
+    // Melee tactical flanking, sprint-lunge, and cooldown circle-strafing
+    const lungeMinDist = archetype.attackRange * 1.02;
+    const lungeMaxDist = archetype.attackRange * 2.25;
+
+    if (distToPlayer <= archetype.attackRange * 0.96) {
+      if (attackCooldown > 0.28) {
+        // Circle-strafe around the player while waiting for next axe swing
+        const radialAdjust = distToPlayer < archetype.attackRange * 0.62 ? -0.35 : 0.15;
+        desiredDirX = perpX * 0.95 + dirToPlayerX * radialAdjust;
+        desiredDirZ = perpZ * 0.95 + dirToPlayerZ * radialAdjust;
+        desiredSpeed = archetype.moveSpeed * 0.74;
+      } else {
+        // Step in for the strike
+        desiredDirX = dirToPlayerX * 0.8 + perpX * 0.35;
+        desiredDirZ = dirToPlayerZ * 0.8 + perpZ * 0.35;
+        desiredSpeed = archetype.moveSpeed * 0.58;
+      }
+    } else if (
+      distToPlayer >= lungeMinDist &&
+      distToPlayer <= lungeMaxDist &&
+      attackCooldown <= 0.45
+    ) {
+      // Sprint-Lunge burst!
+      isLunging = true;
+      desiredDirX = dirToPlayerX * 0.96 + perpX * 0.18;
+      desiredDirZ = dirToPlayerZ * 0.96 + perpZ * 0.18;
+      desiredSpeed = archetype.moveSpeed * 1.38;
+    } else {
+      // S-curve flanking approach
+      const flankWave = Math.sin(phaseTime * 2.6) * 0.44 + 0.18 * strafeSign;
+      desiredDirX = dirToPlayerX + perpX * flankWave;
+      desiredDirZ = dirToPlayerZ + perpZ * flankWave;
+      desiredSpeed = archetype.moveSpeed * (state === 'charging' ? 1.08 : 0.68);
+    }
+  }
+
+  // Apply smooth obstacle avoidance repulsion from nearby trees/boulders
+  let repelX = 0;
+  let repelZ = 0;
+  for (let i = 0; i < obstacles.length; i++) {
+    const obs = obstacles[i];
+    const ox = x - obs.x;
+    const oz = z - obs.z;
+    const minDist = obs.radius + 1.35;
+    const dSq = ox * ox + oz * oz;
+    if (dSq > 0.0001 && dSq < minDist * minDist) {
+      const d = Math.sqrt(dSq);
+      const strength = ((minDist - d) / minDist) * 2.1;
+      repelX += (ox / d) * strength;
+      repelZ += (oz / d) * strength;
+    }
+  }
+
+  // Keep outside the camp safe hearth and inside zone outer border
+  const fromCenterX = x - zoneCenterX;
+  const fromCenterZ = z - zoneCenterZ;
+  const distFromCenter = Math.max(0.001, Math.hypot(fromCenterX, fromCenterZ));
+  if (distFromCenter < clearingRadius + 4.5) {
+    const push = ((clearingRadius + 4.5 - distFromCenter) / 4.5) * 2.4;
+    repelX += (fromCenterX / distFromCenter) * push;
+    repelZ += (fromCenterZ / distFromCenter) * push;
+  } else if (distFromCenter > zoneRadius - 8) {
+    const pull = ((distFromCenter - (zoneRadius - 8)) / 8) * 2.4;
+    repelX -= (fromCenterX / distFromCenter) * pull;
+    repelZ -= (fromCenterZ / distFromCenter) * pull;
+  }
+
+  const combinedX = desiredDirX + repelX;
+  const combinedZ = desiredDirZ + repelZ;
+  const combinedLen = Math.hypot(combinedX, combinedZ);
+  const normX = combinedLen > 0.001 ? combinedX / combinedLen : 0;
+  const normZ = combinedLen > 0.001 ? combinedZ / combinedLen : 0;
+
+  const targetVx = normX * desiredSpeed;
+  const targetVz = normZ * desiredSpeed;
+
+  const accel = isLunging ? 14 : 9.5;
+  const blend = 1 - Math.exp(-accel * Math.max(0.001, Math.min(0.1, dt)));
+  const nextVx = vx + (targetVx - vx) * blend;
+  const nextVz = vz + (targetVz - vz) * blend;
+  const nextSpeed = Math.hypot(nextVx, nextVz);
+
+  // When attacking or kiting close to the player, face the player; otherwise face movement vector
+  const facePlayer =
+    state === 'attacking' || isKiting || (isRanged && distToPlayer < archetype.attackRange * 1.15);
+  const targetYaw = facePlayer
+    ? Math.atan2(dirToPlayerX, dirToPlayerZ)
+    : nextSpeed > 0.25
+      ? Math.atan2(nextVx, nextVz)
+      : Math.atan2(dirToPlayerX, dirToPlayerZ);
+
+  const yawDelta = wrapAngleRad(targetYaw - yaw);
+  const turnBank = Math.max(-0.34, Math.min(0.34, -yawDelta * 0.45 * Math.min(1, nextSpeed / 5)));
+
+  return {
+    state,
+    vx: nextVx,
+    vz: nextVz,
+    speed: nextSpeed,
+    targetYaw,
+    turnBank,
+    isLunging,
+    isKiting,
+  };
+}
+
+export interface NpcWaypointSteeringInput {
+  x: number;
+  z: number;
+  vx?: number;
+  vz?: number;
+  yaw: number;
+  targetX: number;
+  targetZ: number;
+  desiredSpeed?: number;
+  maxSpeed?: number;
+  dt: number;
+  obstacles?: HunterObstaclePoint[];
+}
+
+export interface NpcWaypointSteeringOutput {
+  vx: number;
+  vz: number;
+  speed: number;
+  targetYaw: number;
+  desiredYaw: number;
+  turnBank: number;
+  distToTarget: number;
+  reached: boolean;
+}
+
+/**
+ * Smooth planar velocity, obstacle avoidance, and banking for City NPCs and Camp Workers.
+ */
+export function computeNpcWaypointSteering(
+  input: NpcWaypointSteeringInput,
+): NpcWaypointSteeringOutput {
+  const {
+    x,
+    z,
+    vx = 0,
+    vz = 0,
+    yaw,
+    targetX,
+    targetZ,
+    desiredSpeed,
+    maxSpeed,
+    dt,
+    obstacles = [],
+  } = input;
+  const topSpeed = desiredSpeed ?? maxSpeed ?? 3.0;
+  const dx = targetX - x;
+  const dz = targetZ - z;
+  const distToTarget = Math.hypot(dx, dz);
+  const reached = distToTarget < 0.65;
+
+  // Slow down smoothly as the NPC approaches the waypoint
+  const arrivalScale = distToTarget < 1.8 ? Math.max(0, distToTarget / 1.8) : 1;
+  let dirX = distToTarget > 0.001 ? dx / distToTarget : 0;
+  let dirZ = distToTarget > 0.001 ? dz / distToTarget : 0;
+
+  for (let i = 0; i < obstacles.length; i++) {
+    const obs = obstacles[i];
+    const ox = x - obs.x;
+    const oz = z - obs.z;
+    const minDist = obs.radius + 1.35;
+    const dSq = ox * ox + oz * oz;
+    if (dSq > 0.0001 && dSq < minDist * minDist) {
+      const d = Math.sqrt(dSq);
+      const nx = ox / d;
+      const nz = oz / d;
+      const strength = (minDist - d) / minDist;
+      const push = strength * 1.65;
+      dirX += nx * push;
+      dirZ += nz * push;
+
+      // Tangential sidestep when obstacle sits directly between NPC and target
+      const dot = dirX * nx + dirZ * nz;
+      if (dot < 0.25) {
+        const tx = -nz;
+        const tz = nx;
+        const side = tx * dx + tz * dz >= 0 ? 1 : -1;
+        dirX += tx * side * strength * 1.35;
+        dirZ += tz * side * strength * 1.35;
+      }
+    }
+  }
+
+  const len = Math.hypot(dirX, dirZ);
+  if (len > 0.001) {
+    dirX /= len;
+    dirZ /= len;
+  }
+
+  const targetVx = dirX * topSpeed * arrivalScale;
+  const targetVz = dirZ * topSpeed * arrivalScale;
+  const blend = 1 - Math.exp(-8.5 * Math.max(0.001, Math.min(0.1, dt)));
+  const nextVx = vx + (targetVx - vx) * blend;
+  const nextVz = vz + (targetVz - vz) * blend;
+  const speed = Math.hypot(nextVx, nextVz);
+
+  const targetYaw =
+    speed > 0.12
+      ? Math.atan2(nextVx, nextVz)
+      : distToTarget > 0.05
+        ? Math.atan2(dx, dz)
+        : yaw;
+  const yawDelta = wrapAngleRad(targetYaw - yaw);
+  const turnBank = Math.max(-0.26, Math.min(0.26, -yawDelta * 0.42 * Math.min(1, speed / 3.5)));
+
+  return {
+    vx: nextVx,
+    vz: nextVz,
+    speed,
+    targetYaw,
+    desiredYaw: targetYaw,
+    turnBank,
+    distToTarget,
+    reached,
+  };
+}
+

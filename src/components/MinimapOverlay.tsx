@@ -64,18 +64,18 @@ export function MinimapOverlay({
       data-zone={zone.id}
       data-player-x={zone.playerX}
       data-player-z={zone.playerZ}
-      className={`pointer-events-auto rounded-xl border shadow-[0_8px_22px_rgba(8,14,24,0.58)] transition-colors ${
+      className={`pointer-events-auto rounded-xl transition-colors ${
         inCity
-          ? 'bg-[#1f1a12]/94 border-[#f6c344]/65'
+          ? 'hud-plaque-gold'
           : inLevel5
-            ? 'bg-[#1b102c]/94 border-[#f0abfc]/65'
+            ? 'hud-plaque border-[#f0abfc]/65'
             : inLevel4
-              ? 'bg-[#26111c]/94 border-[#fb7185]/60'
+              ? 'hud-plaque-crimson'
               : inLevel3
-                ? 'bg-[#121f38]/94 border-[#818cf8]/60'
+                ? 'hud-plaque border-[#818cf8]/60'
                 : inLevel2
-                  ? 'bg-[#102638]/94 border-[#5be7ff]/60'
-                  : 'bg-[#162336]/92 border-[#6e8eb0]/45'
+                  ? 'hud-plaque-frost'
+                  : 'hud-plaque'
       } ${collapsed ? 'w-auto' : 'w-[156px] sm:w-[196px]'}`}
     >
       {/* Header / Collapse Toggle */}
@@ -110,9 +110,9 @@ export function MinimapOverlay({
       </button>
 
       {!collapsed && (
-        <div className="px-2 pb-2 pt-0.5 flex flex-col gap-1.5 border-t border-[#6e8eb0]/25">
+        <div className="px-2 pb-2 pt-0.5 flex flex-col gap-1.5 border-t border-[#78a0c8]/25">
           {/* 6-Zone North-Up SVG Map */}
-          <div className="relative rounded-lg bg-[#0d1726] border border-[#3e536b]/80 overflow-hidden">
+          <div className="relative rounded-lg bg-[#09121e] border border-[#567494]/70 shadow-[inset_0_0_14px_rgba(4,9,18,0.85)] overflow-hidden">
             <svg
               viewBox={`0 0 ${layout.width} ${layout.height}`}
               className="w-full h-auto block"

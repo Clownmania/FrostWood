@@ -269,3 +269,14 @@ test('every zone boss awards valid high-tier craftable items and scales loot wit
   }
 });
 
+test('every zone boss defines functional elemental auras with distinct radii and debuff labels', () => {
+  for (const id of ZONE_BOSS_ORDER) {
+    const spec = ZONE_BOSS_SPECS[id];
+    assert.ok(spec.elementalAuraType);
+    assert.ok(spec.auraRadius >= 9.0);
+    assert.ok(spec.auraColorHex > 0);
+    assert.ok(spec.auraEffectLabel.length > 5);
+  }
+});
+
+

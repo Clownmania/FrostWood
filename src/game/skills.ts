@@ -1,15 +1,17 @@
 import type {
+  ActiveSkillPerkPulse,
   AnimalRarity,
   PlayerSkillsState,
   ResourceCounts,
   SkillBonuses,
   SkillBranch,
+  SkillGatheringResource,
   SkillPerkId,
   SkillPerkSpec,
   TreeKind,
 } from './types';
 
-export const BASE_BACKPACK_CAPACITY = 65;
+export const BASE_BACKPACK_CAPACITY = 250;
 export const CABIN_STORAGE_PER_TIER = 50;
 export const MAX_SKILL_LEVEL = 25;
 
@@ -426,6 +428,10 @@ export function computeGatheringNodeXp(
   node: TreeKind | 'boulder' | 'ice_sculpture',
 ): number {
   switch (node) {
+    case 'void_heartwood':
+      return 38;
+    case 'pyrewood':
+      return 28;
     case 'elder':
       return 20;
     case 'spruce':
@@ -453,3 +459,159 @@ export function computeHuntingKillXp(rarity: AnimalRarity): number {
       return 14;
   }
 }
+
+export const SKILL_PERK_PULSE_DURATION = 3.2;
+
+export function createInitialSkillPerkPulse(): ActiveSkillPerkPulse {
+  return {
+    active: false,
+    perkId: null,
+    perkName: '',
+    rank: 0,
+    maxRank: 3,
+    branch: 'gathering',
+    resource: null,
+    bonusPct: 0,
+    secondaryBonusText: '',
+    taskLabel: '',
+    timeRemaining: 0,
+    duration: SKILL_PERK_PULSE_DURATION,
+    pulseNonce: 0,
+    activeResources: {},
+  };
+}
+
+const DEFAULT_TASK_LABELS: Record<SkillGatheringResource, string> = {
+  wood: 'Timber Felling',
+  stone: 'Granite Quarrying',
+  ice: 'Glacial Ice Harvest',
+  pelts: 'Arctic Pelt Skinning',
+  pack: 'Cargo Pack Hauling',
+};
+
+export function triggerSkillPerkGatheringPulse(
+  current: ActiveSkillPerkPulse,
+  skills: PlayerSkillsState,
+  resource: SkillGatheringResource,
+  customTaskLabel?: string,
+): ActiveSkillPerkPulse {
+  const bonuses = computeSkillBonuses(skills);
+  const gatherRank = skills.ranks.gather_yield ?? 0;
+  const peltRank = skills.ranks.pelt_yield ?? 0;
+  const packRank = skills.ranks.pack_capacity ?? 0;
+  const huntDmgRank = skills.ranks.hunt_damage ?? 0;
+
+  let perkId: SkillPerkId | null = null;
+  let rank = 0;
+  let bonusPct = 0;
+  let secondaryBonusText = '';
+
+  if (resource === 'wood' || resource === 'stone' || resource === 'ice') {
+    if (gatherRank > 0) {
+      perkId = 'gather_yield';
+      rank = gatherRank;
+      bonusPct = Math.round((bonuses.gatherYieldMult - 1) * 100);
+      const axeBonusPct = Math.round((bonuses.axePowerMult - 1) * 100);
+      secondaryBonusText = `+${axeBonusPct}% Axe Cleave Power`;
+    } else if (packRank > 0 && (resource === 'wood' || resource === 'stone')) {
+      perkId = 'pack_capacity';
+      rank = packRank;
+      bonusPct = Math.round((bonuses.packBonus / BASE_BACKPACK_CAPACITY) * 100);
+      secondaryBonusText =
+        bonuses.magnetRadiusBonus > 0
+          ? `+${bonuses.packBonus} Cap · +${bonuses.magnetRadiusBonus}m Magnet`
+          : `+${bonuses.packBonus} Pack Capacity`;
+    }
+  } else if (resource === 'pelts') {
+    if (peltRank > 0) {
+      perkId = 'pelt_yield';
+      rank = peltRank;
+      bonusPct = Math.round((bonuses.peltYieldMult - 1) * 100);
+      const valPct = Math.round((bonuses.peltValueMult - 1) * 100);
+      secondaryBonusText = `+${valPct}% Furrier Trade Gold`;
+    } else if (huntDmgRank > 0) {
+      perkId = 'hunt_damage';
+      rank = huntDmgRank;
+      bonusPct = Math.round((bonuses.huntDamageMult - 1) * 100);
+      const ambushPct = Math.round((bonuses.ambushMult - 1) * 100);
+      secondaryBonusText = `+${ambushPct}% Ambush Precision`;
+    }
+  } else if (resource === 'pack') {
+    if (packRank > 0) {
+      perkId = 'pack_capacity';
+      rank = packRank;
+      bonusPct = Math.round((bonuses.packBonus / BASE_BACKPACK_CAPACITY) * 100);
+      secondaryBonusText =
+        bonuses.magnetRadiusBonus > 0
+          ? `+${bonuses.packBonus} Cap · +${bonuses.magnetRadiusBonus}m Magnet`
+          : `+${bonuses.packBonus} Pack Capacity`;
+    }
+  }
+
+  if (!perkId || rank <= 0) {
+    return current;
+  }
+
+  const spec = SKILL_PERKS[perkId];
+  const nextActiveResources: Partial<Record<SkillGatheringResource, number>> = {
+    ...current.activeResources,
+    [resource]: SKILL_PERK_PULSE_DURATION,
+  };
+  if (packRank > 0 && (resource === 'wood' || resource === 'stone' || resource === 'pelts')) {
+    nextActiveResources.pack = SKILL_PERK_PULSE_DURATION;
+  }
+
+  return {
+    active: true,
+    perkId,
+    perkName: spec.name,
+    rank,
+    maxRank: spec.maxRank,
+    branch: spec.branch,
+    resource,
+    bonusPct,
+    secondaryBonusText,
+    taskLabel: customTaskLabel ?? DEFAULT_TASK_LABELS[resource],
+    timeRemaining: SKILL_PERK_PULSE_DURATION,
+    duration: SKILL_PERK_PULSE_DURATION,
+    pulseNonce: current.pulseNonce + 1,
+    activeResources: nextActiveResources,
+  };
+}
+
+export function stepSkillPerkGatheringPulse(
+  current: ActiveSkillPerkPulse,
+  dt: number,
+): ActiveSkillPerkPulse {
+  const safeDt = Math.max(0, dt);
+  if (!current.active && Object.keys(current.activeResources).length === 0) {
+    return current;
+  }
+
+  const nextTime = Math.max(0, current.timeRemaining - safeDt);
+  const nextResources: Partial<Record<SkillGatheringResource, number>> = {};
+  for (const [k, v] of Object.entries(current.activeResources) as Array<
+    [SkillGatheringResource, number | undefined]
+  >) {
+    if (typeof v === 'number' && v - safeDt > 0.01) {
+      nextResources[k] = Number((v - safeDt).toFixed(2));
+    }
+  }
+
+  if (nextTime <= 0.01) {
+    return {
+      ...current,
+      active: false,
+      timeRemaining: 0,
+      activeResources: nextResources,
+    };
+  }
+
+  return {
+    ...current,
+    active: true,
+    timeRemaining: Number(nextTime.toFixed(2)),
+    activeResources: nextResources,
+  };
+}
+

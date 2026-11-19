@@ -296,6 +296,15 @@ export const LUMBER_CAMP_TIERS: BuildingSpec[] = [
     warmthRadius: 0,
     description: 'Master woodcutting camp. +1.35 Wood/s & +0.5 Gold/s.',
   },
+  {
+    level: 4,
+    name: 'Frostwood Timber Guild',
+    cost: { wood: 460, pelts: 68, stone: 95, ice: 22, gold: 920, meat: 24 },
+    woodPerSec: 2.4,
+    goldPerSec: 1.2,
+    warmthRadius: 5,
+    description: '2 AI Woodcutters, heated log yard, +2.4 Wood/s & +1.2 Gold/s.',
+  },
 ];
 
 export const SAWMILL_TIERS: BuildingSpec[] = [
@@ -334,6 +343,15 @@ export const SAWMILL_TIERS: BuildingSpec[] = [
     goldPerSec: 1.6,
     warmthRadius: 4,
     description: '3 AI Lumberjacks + massive automated timber yield.',
+  },
+  {
+    level: 4,
+    name: 'Clockwork Frost-Sawmill',
+    cost: { wood: 640, pelts: 88, stone: 145, ice: 34, gold: 1380, meat: 32 },
+    woodPerSec: 5.5,
+    goldPerSec: 3.2,
+    warmthRadius: 7,
+    description: '4 AI Lumberjacks + overdrive twin-turbine timber mill (+5.5 Wood/s).',
   },
 ];
 
@@ -374,6 +392,15 @@ export const TANNERY_TIERS: BuildingSpec[] = [
     warmthRadius: 0,
     description: '2 AI Hunters, +80% pelt value & +5.0 Gold/s.',
   },
+  {
+    level: 4,
+    name: 'Imperial Fur Exchange',
+    cost: { wood: 580, pelts: 115, stone: 120, ice: 28, gold: 1320, meat: 34 },
+    woodPerSec: 0,
+    goldPerSec: 9.2,
+    warmthRadius: 6,
+    description: '3 AI Hunters, +125% pelt value & +9.2 Gold/s.',
+  },
 ];
 
 export const FORGE_TIERS: BuildingSpec[] = [
@@ -412,6 +439,101 @@ export const FORGE_TIERS: BuildingSpec[] = [
     goldPerSec: 4.2,
     warmthRadius: 16,
     description: 'Towering signal brazier wards off wolves near camp.',
+  },
+  {
+    level: 4,
+    name: 'Starfire Runeforge',
+    cost: { wood: 720, pelts: 120, stone: 175, ice: 44, gold: 1750, meat: 42 },
+    woodPerSec: 1.8,
+    goldPerSec: 7.8,
+    warmthRadius: 21,
+    description: 'Starfire crucible projects 21m warmth & +60% harvest yield.',
+  },
+];
+
+export const WATCHTOWER_TIERS: BuildingSpec[] = [
+  {
+    level: 0,
+    name: 'Unbuilt Watchtower',
+    cost: { wood: 0, pelts: 0, gold: 0 },
+    woodPerSec: 0,
+    goldPerSec: 0,
+    warmthRadius: 0,
+    windResistanceBonusPct: 0,
+    description: 'Erect a frontier lookout spire to scout timberlines & guide trade.',
+  },
+  {
+    level: 1,
+    name: 'Timber Scout Lookout',
+    cost: { wood: 38, pelts: 6, stone: 10, gold: 75, meat: 2 },
+    woodPerSec: 0.35,
+    goldPerSec: 0.65,
+    warmthRadius: 9,
+    windResistanceBonusPct: 12,
+    description: 'Elevated pine lookout tower (+0.35 Wood/s, +0.65 Gold/s & +12% Wind Resist).',
+  },
+  {
+    level: 2,
+    name: 'Ranger Signal Spire',
+    cost: { wood: 110, pelts: 18, stone: 32, ice: 4, gold: 220, meat: 6 },
+    woodPerSec: 0.85,
+    goldPerSec: 1.75,
+    warmthRadius: 13,
+    windResistanceBonusPct: 24,
+    description: 'Stone-buttressed signal beacon (+0.85 Wood/s, +1.75 Gold/s & +24% Wind Resist).',
+  },
+  {
+    level: 3,
+    name: 'Aurora Falconry Citadel',
+    cost: { wood: 260, pelts: 44, stone: 72, ice: 16, gold: 560, meat: 14 },
+    woodPerSec: 1.8,
+    goldPerSec: 4.1,
+    warmthRadius: 17,
+    windResistanceBonusPct: 38,
+    description: 'Highland falconry spire with aurora lens (+1.8 Wood/s, +4.1 Gold/s & +38% Wind Resist).',
+  },
+];
+
+export const GRAND_GRANARY_TIERS: BuildingSpec[] = [
+  {
+    level: 0,
+    name: 'Unbuilt Smokehouse',
+    cost: { wood: 0, pelts: 0, gold: 0 },
+    woodPerSec: 0,
+    goldPerSec: 0,
+    warmthRadius: 0,
+    heatRetentionBonusPct: 0,
+    description: 'Cure venison & store frontier provisions for passive gold & warmth.',
+  },
+  {
+    level: 1,
+    name: 'Trapper Smokehouse',
+    cost: { wood: 42, pelts: 8, stone: 12, gold: 85, meat: 4 },
+    woodPerSec: 0.2,
+    goldPerSec: 0.95,
+    warmthRadius: 10,
+    heatRetentionBonusPct: 14,
+    description: 'Hickory-smoke curing shed (+0.95 Gold/s, +15% trade value & +14% Heat Retention).',
+  },
+  {
+    level: 2,
+    name: 'Provision Granary',
+    cost: { wood: 125, pelts: 22, stone: 36, ice: 6, gold: 250, meat: 10 },
+    woodPerSec: 0.5,
+    goldPerSec: 2.35,
+    warmthRadius: 14,
+    heatRetentionBonusPct: 28,
+    description: 'Insulated stone storehouse (+2.35 Gold/s, +30% trade value & +28% Heat Retention).',
+  },
+  {
+    level: 3,
+    name: 'Royal Feast Smokehouse',
+    cost: { wood: 290, pelts: 50, stone: 80, ice: 18, gold: 620, meat: 22 },
+    woodPerSec: 1.1,
+    goldPerSec: 5.4,
+    warmthRadius: 18,
+    heatRetentionBonusPct: 44,
+    description: 'Grand provision hall (+5.4 Gold/s, +50% trade value & +44% Heat Retention).',
   },
 ];
 
@@ -523,6 +645,8 @@ export const INITIAL_LEVELS: UpgradeLevels = {
   stormShelter: 0,
   windbreak: 0,
   thermalConduit: 0,
+  watchtower: 0,
+  grandGranary: 0,
   festivalPavilion: 0,
   iceMonument: 0,
 };
@@ -596,6 +720,10 @@ export function getBuildingTable(id: BuildingId): BuildingSpec[] {
       return WINDBREAK_TIERS;
     case 'thermalConduit':
       return THERMAL_CONDUIT_TIERS;
+    case 'watchtower':
+      return WATCHTOWER_TIERS;
+    case 'grandGranary':
+      return GRAND_GRANARY_TIERS;
   }
 }
 
@@ -662,12 +790,25 @@ export function calculateSellRates(
   woodValue: number;
   peltValue: number;
 } {
-  const tanneryBonus = levels.tannery === 0 ? 1 : levels.tannery === 1 ? 1.15 : levels.tannery === 2 ? 1.4 : 1.8;
+  const tanneryBonus =
+    levels.tannery === 0
+      ? 1
+      : levels.tannery === 1
+        ? 1.15
+        : levels.tannery === 2
+          ? 1.4
+          : levels.tannery === 3
+            ? 1.8
+            : 2.25;
   const forgeBonus = 1 + levels.forge * 0.1;
+  const granaryLvl = levels.grandGranary ?? 0;
+  const granaryBonus = granaryLvl === 0 ? 1 : granaryLvl === 1 ? 1.15 : granaryLvl === 2 ? 1.3 : 1.5;
   const festivalBonus = (levels.festivalPavilion ?? 0) >= 2 ? 1.18 : 1.0;
   return {
-    woodValue: Math.round(2 * forgeBonus * festivalBonus * goldTradeMult * 10) / 10,
-    peltValue: Math.round(8 * tanneryBonus * festivalBonus * peltValueMult * goldTradeMult * 10) / 10,
+    woodValue: Math.round(2 * forgeBonus * granaryBonus * festivalBonus * goldTradeMult * 10) / 10,
+    peltValue:
+      Math.round(8 * tanneryBonus * granaryBonus * festivalBonus * peltValueMult * goldTradeMult * 10) /
+      10,
   };
 }
 
@@ -708,6 +849,8 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
   const forge = getBuildingSpec('forge', levels.forge);
   const windbreak = getBuildingSpec('windbreak', levels.windbreak ?? 0);
   const thermalConduit = getBuildingSpec('thermalConduit', levels.thermalConduit ?? 0);
+  const watchtower = getBuildingSpec('watchtower', levels.watchtower ?? 0);
+  const grandGranary = getBuildingSpec('grandGranary', levels.grandGranary ?? 0);
   const festivalPavilion = getFestivalBuildingSpec(
     'festivalPavilion',
     levels.festivalPavilion ?? 0,
@@ -725,6 +868,8 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
     forge.woodPerSec +
     windbreak.woodPerSec +
     thermalConduit.woodPerSec +
+    watchtower.woodPerSec +
+    grandGranary.woodPerSec +
     festivalPavilion.woodPerSec;
   const goldPerSec =
     cabin.goldPerSec +
@@ -734,27 +879,35 @@ export function calculatePassiveRates(levels: UpgradeLevels): {
     forge.goldPerSec +
     windbreak.goldPerSec +
     thermalConduit.goldPerSec +
+    watchtower.goldPerSec +
+    grandGranary.goldPerSec +
     tamingPen.goldPerSec +
     festivalPavilion.goldPerSec +
     iceMonument.goldPerSec;
   const workerCount =
-    (levels.lumberCamp >= 2 ? 1 : 0) +
+    (levels.lumberCamp >= 2 ? (levels.lumberCamp >= 4 ? 2 : 1) : 0) +
     levels.sawmill +
-    (levels.tannery >= 1 ? (levels.tannery >= 3 ? 2 : 1) : 0);
+    (levels.tannery >= 1 ? (levels.tannery >= 4 ? 3 : levels.tannery >= 3 ? 2 : 1) : 0);
   const warmthRadius = Math.max(
     cabin.warmthRadius,
     forge.warmthRadius,
     windbreak.warmthRadius,
     thermalConduit.warmthRadius,
+    watchtower.warmthRadius,
+    grandGranary.warmthRadius,
     tamingPen.warmthRadius,
     festivalPavilion.warmthRadius,
     8.5 +
       levels.cabin * 1.4 +
       levels.forge * 1.6 +
-      (levels.thermalConduit ?? 0) * 2.2,
+      (levels.thermalConduit ?? 0) * 2.2 +
+      (levels.grandGranary ?? 0) * 1.1,
   );
   const harvestMultiplier =
-    1 + levels.forge * 0.15 + (levels.thermalConduit ?? 0) * 0.12;
+    1 +
+    levels.forge * 0.15 +
+    (levels.thermalConduit ?? 0) * 0.12 +
+    (levels.watchtower ?? 0) * 0.06;
 
   return {
     woodPerSec,
@@ -864,6 +1017,8 @@ export function computeZoneWeatherStatusEffect(params: {
 
   const windbreakSpec = getBuildingSpec('windbreak', levels.windbreak ?? 0);
   const thermalSpec = getBuildingSpec('thermalConduit', levels.thermalConduit ?? 0);
+  const watchtowerSpec = getBuildingSpec('watchtower', levels.watchtower ?? 0);
+  const granarySpec = getBuildingSpec('grandGranary', levels.grandGranary ?? 0);
   const cabinSpec = getBuildingSpec('cabin', levels.cabin ?? 1);
   const lumberSpec = getBuildingSpec('lumberCamp', levels.lumberCamp ?? 0);
   const forgeSpec = getBuildingSpec('forge', levels.forge ?? 0);
@@ -873,6 +1028,7 @@ export function computeZoneWeatherStatusEffect(params: {
   const rawWindResist = inStormShelter
     ? 100
     : (windbreakSpec.windResistanceBonusPct ?? 0) +
+      (watchtowerSpec.windResistanceBonusPct ?? 0) +
       (shelterSpec.windResistanceBonusPct ?? 0) +
       (cabinSpec.windResistanceBonusPct ?? 0) +
       (lumberSpec.windResistanceBonusPct ?? 0) +
@@ -882,6 +1038,7 @@ export function computeZoneWeatherStatusEffect(params: {
   const rawHeatRetain = inStormShelter
     ? 100
     : (thermalSpec.heatRetentionBonusPct ?? 0) +
+      (granarySpec.heatRetentionBonusPct ?? 0) +
       (forgeSpec.heatRetentionBonusPct ?? 0) +
       (cabinSpec.heatRetentionBonusPct ?? 0) +
       coatBonus +

@@ -5,11 +5,19 @@ import {
   canCraftRecipe,
   getCraftRecipe,
 } from './crafting';
+import { getWingsOfFireSpec } from './gear';
+import { computeMythicAscensionBonuses } from './mystery';
 import type {
   ActiveCraftBuffs,
   BackpackInventoryMap,
   BackpackPreparednessBonus,
+  CraftCategory,
   CraftItemId,
+  GearBonuses,
+  GearLevels,
+  GearSetBonusSpec,
+  ItemRarity,
+  MythicAscensionId,
   ResourceCounts,
 } from './types';
 
@@ -68,7 +76,7 @@ export function createInitialBackpackInventory(
 }
 
 export function computeBackpackItemCapacity(cargoCapacity: number): number {
-  return 12 + Math.floor(Math.max(0, cargoCapacity - 25) / 8);
+  return 48 + Math.floor(Math.max(0, cargoCapacity - 25) / 4);
 }
 
 export function countBackpackItems(inv: BackpackInventoryMap): number {
@@ -187,6 +195,296 @@ export function useBackpackItem(params: {
     warmth: applied.warmth,
     recipe: applied.recipe,
     deployTrapKind: null,
+  };
+}
+
+export interface SalvageBackpackItemResult {
+  inventory: BackpackInventoryMap;
+  resources: ResourceCounts;
+  recipe: CraftRecipe;
+  salvagedQty: number;
+  refunded: {
+    wood: number;
+    stone: number;
+    ice: number;
+    pelts: number;
+    gold: number;
+  };
+}
+
+export function salvageBackpackItem(params: {
+  resources: ResourceCounts;
+  inventory: BackpackInventoryMap;
+  id: CraftItemId;
+  qty?: number;
+}): SalvageBackpackItemResult | null {
+  const { resources, inventory, id, qty = 1 } = params;
+  const available = Math.max(0, inventory[id] ?? 0);
+  const requested = Math.floor(qty);
+  if (available <= 0 || requested <= 0) return null;
+
+  const salvagedQty = Math.min(available, requested);
+  const recipe = getCraftRecipe(id);
+  const yieldDivisor = Math.max(1, recipe.yieldQty);
+  const rate = 0.35;
+
+  const unitWood = (recipe.cost.wood * rate) / yieldDivisor;
+  const unitStone = (recipe.cost.stone * rate) / yieldDivisor;
+  const unitIce = ((recipe.cost.ice ?? 0) * rate) / yieldDivisor;
+  const unitPelts = (recipe.cost.pelts * rate) / yieldDivisor;
+  const unitGold = (recipe.cost.gold * rate) / yieldDivisor;
+
+  const refunded = {
+    wood: Math.floor(unitWood * salvagedQty),
+    stone: Math.floor(unitStone * salvagedQty),
+    ice: Math.floor(unitIce * salvagedQty),
+    pelts: Math.floor(unitPelts * salvagedQty),
+    gold: Math.floor(unitGold * salvagedQty),
+  };
+
+  if (
+    refunded.wood === 0 &&
+    refunded.stone === 0 &&
+    refunded.ice === 0 &&
+    refunded.pelts === 0 &&
+    refunded.gold === 0 &&
+    recipe.cost.wood > 0
+  ) {
+    refunded.wood = 1;
+  }
+
+  const nextInventory: BackpackInventoryMap = {
+    ...inventory,
+    [id]: available - salvagedQty,
+  };
+
+  const nextResources: ResourceCounts = {
+    wood: resources.wood + refunded.wood,
+    stone: (resources.stone ?? 0) + refunded.stone,
+    ice: (resources.ice ?? 0) + refunded.ice,
+    ...(resources.meat !== undefined ? { meat: resources.meat } : {}),
+    pelts: resources.pelts + refunded.pelts,
+    gold: resources.gold + refunded.gold,
+  };
+
+  return {
+    inventory: nextInventory,
+    resources: nextResources,
+    recipe,
+    salvagedQty,
+    refunded,
+  };
+}
+
+export type InventoryCategoryFilter = 'all' | CraftCategory;
+export type InventorySortMode = 'stocked' | 'rarity' | 'name' | 'category';
+
+const RARITY_WEIGHT: Record<ItemRarity, number> = {
+  mythic: 5,
+  epic: 4,
+  rare: 3,
+  uncommon: 2,
+  common: 1,
+};
+
+const CATEGORY_WEIGHT: Record<CraftCategory, number> = {
+  traps: 1,
+  tools: 2,
+  provisions: 3,
+  parts: 4,
+};
+
+export function filterAndSortInventoryItems(params: {
+  recipes?: CraftRecipe[];
+  inventory: BackpackInventoryMap;
+  filter: InventoryCategoryFilter;
+  sort: InventorySortMode;
+  searchQuery: string;
+  stockedOnly?: boolean;
+}): CraftRecipe[] {
+  const {
+    recipes = ALL_CRAFT_RECIPES,
+    inventory,
+    filter,
+    sort,
+    searchQuery,
+    stockedOnly = false,
+  } = params;
+
+  const needle = searchQuery.trim().toLowerCase();
+
+  const filtered = recipes.filter((recipe) => {
+    if (filter !== 'all' && recipe.category !== filter) return false;
+    if (stockedOnly && (inventory[recipe.id] ?? 0) <= 0) return false;
+    if (needle.length > 0) {
+      const hay = `${recipe.name} ${recipe.summary} ${recipe.tag} ${recipe.category} ${recipe.rarity}`.toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    return true;
+  });
+
+  return [...filtered].sort((a, b) => {
+    const qtyA = inventory[a.id] ?? 0;
+    const qtyB = inventory[b.id] ?? 0;
+
+    if (sort === 'stocked') {
+      if ((qtyB > 0 ? 1 : 0) !== (qtyA > 0 ? 1 : 0)) {
+        return (qtyB > 0 ? 1 : 0) - (qtyA > 0 ? 1 : 0);
+      }
+      if (qtyB !== qtyA) return qtyB - qtyA;
+      const rDiff = RARITY_WEIGHT[b.rarity] - RARITY_WEIGHT[a.rarity];
+      if (rDiff !== 0) return rDiff;
+      return a.name.localeCompare(b.name);
+    }
+
+    if (sort === 'rarity') {
+      const rDiff = RARITY_WEIGHT[b.rarity] - RARITY_WEIGHT[a.rarity];
+      if (rDiff !== 0) return rDiff;
+      if (qtyB !== qtyA) return qtyB - qtyA;
+      return a.name.localeCompare(b.name);
+    }
+
+    if (sort === 'category') {
+      const cDiff = CATEGORY_WEIGHT[a.category] - CATEGORY_WEIGHT[b.category];
+      if (cDiff !== 0) return cDiff;
+      if (qtyB !== qtyA) return qtyB - qtyA;
+      return a.name.localeCompare(b.name);
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export interface InventorySlotOccupancy {
+  used: number;
+  maxItems: number;
+  free: number;
+  pct: number;
+  visibleEmptySockets: number;
+  hiddenEmptySockets: number;
+}
+
+export function getInventorySlotOccupancy(params: {
+  inventory: BackpackInventoryMap;
+  maxItems: number;
+  maxEmptySocketsShown?: number;
+}): InventorySlotOccupancy {
+  const { inventory, maxItems, maxEmptySocketsShown = 6 } = params;
+  const used = countBackpackItems(inventory);
+  const safeMax = Math.max(1, maxItems);
+  const free = Math.max(0, safeMax - used);
+  const pct = Math.min(100, Math.round((used / safeMax) * 100));
+  const visibleEmptySockets = Math.min(free, maxEmptySocketsShown);
+  const hiddenEmptySockets = Math.max(0, free - visibleEmptySockets);
+  return {
+    used,
+    maxItems: safeMax,
+    free,
+    pct,
+    visibleEmptySockets,
+    hiddenEmptySockets,
+  };
+}
+
+export interface TotalEquipmentSummary {
+  damageMult: number;
+  moveSpeedMult: number;
+  coldResistPct: number;
+  hpRegenPerSec: number;
+  gatherYieldMult: number;
+  goldTradeMult: number;
+  equippedGearCount: number;
+  totalGearSlots: number;
+  setTier: number;
+}
+
+export function computeTotalEquipmentSummary(params: {
+  gear: GearLevels;
+  gearBonuses: GearBonuses;
+  gearSet: GearSetBonusSpec | null;
+  wingsTier: number;
+  wingsEquipped: boolean;
+  equippedAscension: MythicAscensionId | null;
+  preparedness: BackpackPreparednessBonus;
+}): TotalEquipmentSummary {
+  const {
+    gear,
+    gearBonuses,
+    gearSet,
+    wingsTier,
+    wingsEquipped,
+    equippedAscension,
+    preparedness,
+  } = params;
+
+  const wingsActive = wingsTier > 0 && wingsEquipped;
+  const wingsSpec = getWingsOfFireSpec(wingsActive ? wingsTier : 0);
+  const ascBonuses = computeMythicAscensionBonuses(equippedAscension);
+
+  const damageMult = Number(
+    (
+      gearBonuses.damageMult *
+      (gearSet?.damageMult ?? 1) *
+      wingsSpec.damageMult *
+      ascBonuses.damageMult *
+      preparedness.damageMult
+    ).toFixed(2),
+  );
+
+  const moveSpeedMult = Number(
+    (
+      gearBonuses.moveSpeedMult *
+      wingsSpec.moveSpeedMult *
+      ascBonuses.moveSpeedMult *
+      preparedness.moveSpeedMult
+    ).toFixed(2),
+  );
+
+  const coldDecayMult =
+    gearBonuses.coldDecayMult *
+    (gearSet?.coldDecayMult ?? 1) *
+    wingsSpec.coldDecayMult *
+    ascBonuses.coldDecayMult *
+    preparedness.coldDecayMult;
+  const coldResistPct = Math.max(0, Math.min(99, Math.round((1 - coldDecayMult) * 100)));
+
+  const hpRegenPerSec = Number(
+    (
+      gearBonuses.hpRegenPerSec +
+      (gearSet?.hpRegenPerSec ?? 0) +
+      wingsSpec.hpRegenBonus +
+      ascBonuses.hpRegenPerSec
+    ).toFixed(1),
+  );
+
+  const gatherYieldMult = Number(
+    (
+      gearBonuses.gatherYieldMult *
+      (gearSet?.gatherYieldMult ?? 1) *
+      ascBonuses.gatherYieldMult
+    ).toFixed(2),
+  );
+
+  const goldTradeMult = Number(
+    (gearBonuses.goldTradeMult * (gearSet?.goldTradeMult ?? 1)).toFixed(2),
+  );
+
+  const equippedArmorCount = (['coat', 'boots', 'gloves', 'pack'] as const).filter(
+    (slot) => (gear[slot] ?? 0) > 0,
+  ).length;
+  const equippedGearCount =
+    equippedArmorCount + (wingsActive ? 1 : 0) + (equippedAscension ? 1 : 0);
+
+  return {
+    damageMult,
+    moveSpeedMult,
+    coldResistPct,
+    hpRegenPerSec,
+    gatherYieldMult,
+    goldTradeMult,
+    equippedGearCount,
+    totalGearSlots: 6,
+    setTier: gearBonuses.setTier,
   };
 }
 

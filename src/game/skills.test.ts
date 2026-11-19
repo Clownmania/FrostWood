@@ -147,3 +147,60 @@ test('backpack usage, clamping, XP rewards, and malformed storage sanitization w
   assert.equal(sanitized.ranks.pack_capacity, 3);
   assert.equal(sanitized.ranks.move_speed, 2);
 });
+
+test('triggerSkillPerkGatheringPulse and stepSkillPerkGatheringPulse activate and decay HUD perk pulses during gathering tasks', async () => {
+  const {
+    createInitialSkillPerkPulse,
+    triggerSkillPerkGatheringPulse,
+    stepSkillPerkGatheringPulse,
+    SKILL_PERK_PULSE_DURATION,
+  } = await import('./skills');
+
+  const baseSkills = createInitialSkillsState();
+  let pulse = createInitialSkillPerkPulse();
+  assert.equal(pulse.active, false);
+
+  // Without any unlocked gathering perks, triggering a wood task does not activate the pulse
+  const noPerkPulse = triggerSkillPerkGatheringPulse(pulse, baseSkills, 'wood');
+  assert.equal(noPerkPulse.active, false);
+
+  // Unlock Boreal Harvester (gather_yield Rank 2) and Expedition Pack (pack_capacity Rank 1)
+  const boostedSkills = {
+    ...baseSkills,
+    ranks: {
+      ...baseSkills.ranks,
+      gather_yield: 2,
+      pack_capacity: 1,
+      pelt_yield: 3,
+    },
+  };
+
+  pulse = triggerSkillPerkGatheringPulse(pulse, boostedSkills, 'wood', 'Timber Felling');
+  assert.equal(pulse.active, true);
+  assert.equal(pulse.perkId, 'gather_yield');
+  assert.equal(pulse.perkName, 'Boreal Harvester');
+  assert.equal(pulse.rank, 2);
+  assert.equal(pulse.bonusPct, 30);
+  assert.equal(pulse.pulseNonce, 1);
+  assert.equal(pulse.activeResources.wood, SKILL_PERK_PULSE_DURATION);
+  assert.equal(pulse.activeResources.pack, SKILL_PERK_PULSE_DURATION);
+
+  // Triggering pelt gathering activates Master Skinner (pelt_yield Rank 3 = +75%)
+  pulse = triggerSkillPerkGatheringPulse(pulse, boostedSkills, 'pelts', 'Arctic Skinning');
+  assert.equal(pulse.active, true);
+  assert.equal(pulse.perkId, 'pelt_yield');
+  assert.equal(pulse.perkName, 'Master Skinner');
+  assert.equal(pulse.bonusPct, 75);
+  assert.equal(pulse.pulseNonce, 2);
+  assert.equal(pulse.activeResources.pelts, SKILL_PERK_PULSE_DURATION);
+
+  // Stepping partially keeps pulse active; stepping past duration deactivates it cleanly
+  const mid = stepSkillPerkGatheringPulse(pulse, 1.2);
+  assert.equal(mid.active, true);
+  assert.ok(mid.timeRemaining > 1.5);
+
+  const expired = stepSkillPerkGatheringPulse(mid, 3.0);
+  assert.equal(expired.active, false);
+  assert.equal(expired.timeRemaining, 0);
+});
+

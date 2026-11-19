@@ -4,9 +4,15 @@ import {
   angleDiff,
   computeBipedGait,
   computeQuadrupedGait,
+  computeThirdPersonCameraDynamics,
+  computeThirdPersonCameraPose,
   computeTouchpadVector,
   dampAngle,
+  getBehindPlayerCameraYaw,
+  stepCameraOrbitYaw,
   stepPlanarVelocity,
+  stepThirdPersonChaseYaw,
+  transformCameraRelativeInput,
 } from './kinematics';
 
 test('dampAngle wraps cleanly across +/-PI boundary via shortest arc', () => {
@@ -219,5 +225,165 @@ test('computeTouchpadVector applies deadzone, clamps puck radius, and outputs 36
   assert.equal(fullDiag.isStalking, false);
   assert.ok(Math.abs(Math.hypot(fullDiag.knobX, fullDiag.knobY) - 44) < 1e-5);
   assert.ok(Math.abs(Math.hypot(fullDiag.dx, fullDiag.dz) - 1) < 1e-5);
+});
+
+test('stepCameraOrbitYaw wraps cleanly through 360 degrees and transformCameraRelativeInput matches rotated camera', () => {
+  const y1 = stepCameraOrbitYaw(Math.PI * 1.9, true, 0.5, 1.0);
+  assert.ok(y1 >= 0 && y1 < Math.PI * 2);
+
+  const held = stepCameraOrbitYaw(1.23, false, 0.5, 1.0);
+  assert.equal(held, 1.23);
+
+  // At cameraYaw = PI/2, camera is at +X looking toward -X, so forward input (rawZ=-1) moves along -X
+  const rotatedForward = transformCameraRelativeInput(0, -1, Math.PI / 2);
+  assert.ok(rotatedForward.x < -0.99);
+  assert.ok(Math.abs(rotatedForward.z) < 1e-6);
+
+  // Relaxed NPC bow carry swings arms naturally instead of locking bow outstretched
+  const relaxedWalk = computeBipedGait({
+    walkPhase: Math.PI * 0.5,
+    speed: 2.6,
+    maxSpeed: 2.6,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'bow',
+    turnBank: 0,
+    relaxedCarry: true,
+  });
+  assert.ok(relaxedWalk.leftShoulderX > -0.9 && relaxedWalk.leftShoulderX < -0.2);
+});
+
+test('computeSleepPose eases character supine onto bed and animates chest breathing', () => {
+  const startPose = computeBipedGait({
+    walkPhase: 0,
+    speed: 0,
+    maxSpeed: 8.4,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'axe',
+    turnBank: 0,
+    isSleeping: true,
+    sleepTime: 0,
+  });
+  assert.equal(startPose.bodyPitchX, 0);
+
+  const deepSleepA = computeBipedGait({
+    walkPhase: 0,
+    speed: 0,
+    maxSpeed: 8.4,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'bow',
+    turnBank: 0,
+    isSleeping: true,
+    sleepTime: 0.7,
+  });
+  const deepSleepB = computeBipedGait({
+    walkPhase: 0,
+    speed: 0,
+    maxSpeed: 8.4,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'bow',
+    turnBank: 0,
+    isSleeping: true,
+    sleepTime: 2.0,
+  });
+  assert.ok(Math.abs((deepSleepA.bodyPitchX ?? 0) + Math.PI / 2) < 1e-5);
+  assert.ok(deepSleepA.leftKneeX > 0.1 && deepSleepA.rightKneeX > 0.1);
+  assert.ok(deepSleepA.leftElbowX < -0.5);
+  assert.notEqual(deepSleepA.pelvisY, deepSleepB.pelvisY, 'sleeping chest rises and falls with breathing');
+});
+
+test('third-person camera aligns behind player, holds steady when idle, and positions over-the-shoulder look target', () => {
+  // Character facing North (-Z, playerYaw = PI) -> camera sits at +Z (yaw = 0) looking North
+  assert.ok(Math.abs(getBehindPlayerCameraYaw(Math.PI)) < 1e-6);
+
+  // Standing still or running straight forward causes zero auto-rotation
+  const idleYaw = stepThirdPersonChaseYaw(1.1, 0, 0, 0.72, 1.0);
+  assert.ok(Math.abs(idleYaw - 1.1) < 1e-6);
+  const straightYaw = stepThirdPersonChaseYaw(1.1, 0, -1, 0.72, 1.0);
+  assert.ok(Math.abs(straightYaw - 1.1) < 1e-6);
+
+  // Lateral steering gently turns camera without wrapping error
+  const steeredYaw = stepThirdPersonChaseYaw(0, -1, -1, 0.72, 0.5);
+  assert.ok(steeredYaw > 0.35 && steeredYaw < 0.37);
+
+  // Over-the-shoulder camera pose sits behind player (+Z when yaw=0) and looks ahead (-Z)
+  const pose = computeThirdPersonCameraPose({
+    targetX: 0,
+    targetY: 0,
+    targetZ: 5,
+    yaw: 0,
+    pitch: 0.28,
+    distance: 7.4,
+    shoulderOffset: 0.55,
+    lookAhead: 2.4,
+  });
+  assert.ok(pose.camZ > 5, 'camera sits behind character on +Z when facing North');
+  assert.ok(pose.lookZ < 5, 'look target leads ahead of character on -Z');
+  assert.ok(pose.camY > 3.0 && pose.camY < 5.0, 'eye-level 3rd-person chase elevation');
+  assert.ok(pose.camX > 0.4, 'subtle over-the-right-shoulder offset');
+});
+
+test('computeBipedGait models airborne tuck/landing absorb and third-person camera dynamics', () => {
+  const airPose = computeBipedGait({
+    walkPhase: 0,
+    speed: 6.0,
+    maxSpeed: 8.6,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'axe',
+    turnBank: 0,
+    isAirborne: true,
+    verticalVelocity: 5.5,
+  });
+  assert.ok(airPose.leftKneeX > 0.25, 'airborne tuck flexes knees');
+  assert.ok(airPose.leftShoulderX < -0.4, 'arms lift for airborne balance');
+
+  const landPose = computeBipedGait({
+    walkPhase: 0,
+    speed: 0,
+    maxSpeed: 8.6,
+    isCreeping: false,
+    idleTime: 0,
+    swingProgress: 0,
+    activeTool: 'axe',
+    turnBank: 0,
+    landingBounce: 0.9,
+  });
+  assert.ok(landPose.pelvisY < -0.05, 'landing dips pelvis for shock absorption');
+  assert.ok(landPose.leftKneeX > 0.3, 'landing flexes knees');
+
+  const sprintCam = computeThirdPersonCameraDynamics({
+    baseFov: 52,
+    speed: 9.2,
+    maxSpeed: 8.6,
+    walkPhase: 1.0,
+    isAiming: false,
+    isAirborne: false,
+    isSwimming: false,
+    landingBounce: 0,
+    trauma: 0.5,
+  });
+  const aimCam = computeThirdPersonCameraDynamics({
+    baseFov: 52,
+    speed: 0,
+    maxSpeed: 8.6,
+    walkPhase: 0,
+    isAiming: true,
+    isAirborne: false,
+    isSwimming: false,
+    landingBounce: 0,
+    trauma: 0,
+  });
+  assert.ok(sprintCam.targetFov > 53.5, 'sprint widens dynamic FOV');
+  assert.ok(aimCam.targetFov < 50, 'bow aiming tightens FOV');
+  assert.ok(sprintCam.shakeAmplitude > 0 && sprintCam.traumaRollAmp > 0);
 });
 

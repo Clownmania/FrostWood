@@ -115,10 +115,10 @@ test('stag freezes in alert state on noisy movement and calms if player holds st
 });
 
 test('dynamic wildlife spawner prioritizes missing species and spawns away from player & trees', () => {
-  const missingFox = pickMissingSpecies({ hare: 6, fox: 3, stag: 5, wolf: 4 });
+  const missingFox = pickMissingSpecies({ hare: 6, fox: 3, stag: 5, wolf: 4, snow_owl: 2 });
   assert.equal(missingFox, 'fox');
 
-  const full = pickMissingSpecies({ hare: 6, fox: 5, stag: 5, wolf: 4 });
+  const full = pickMissingSpecies({ hare: 6, fox: 5, stag: 5, wolf: 4, snow_owl: 2 });
   assert.equal(full, null);
 
   const pos = pickWildlifeSpawnPoint({
@@ -137,11 +137,14 @@ test('dynamic wildlife spawner prioritizes missing species and spawns away from 
 });
 
 test('expanded wildlife roster includes rare, epic & mythic creatures with small spawn chances and active caps', () => {
-  assert.equal(WILDLIFE_SPECIES_ORDER.length, 11);
+  assert.equal(WILDLIFE_SPECIES_ORDER.length, 14);
   assert.equal(SPECIES_SPECS.lynx.rarity, 'uncommon');
+  assert.equal(SPECIES_SPECS.snow_owl.rarity, 'uncommon');
+  assert.equal(SPECIES_SPECS.wolverine.rarity, 'rare');
   assert.equal(SPECIES_SPECS.polar_bear.rarity, 'rare');
   assert.equal(SPECIES_SPECS.frost_stag.rarity, 'rare');
   assert.equal(SPECIES_SPECS.musk_ox.rarity, 'rare');
+  assert.equal(SPECIES_SPECS.frost_boar.rarity, 'epic');
   assert.equal(SPECIES_SPECS.mammoth.rarity, 'epic');
   assert.equal(SPECIES_SPECS.sabertooth.rarity, 'epic');
   assert.equal(SPECIES_SPECS.aurora_fenrir.rarity, 'mythic');
@@ -151,10 +154,13 @@ test('expanded wildlife roster includes rare, epic & mythic creatures with small
     fox: 5,
     stag: 5,
     wolf: 4,
+    snow_owl: 2,
     lynx: 1,
+    wolverine: 0,
     polar_bear: 0,
     frost_stag: 0,
     musk_ox: 0,
+    frost_boar: 0,
     mammoth: 0,
     sabertooth: 0,
     aurora_fenrir: 0,
@@ -162,22 +168,26 @@ test('expanded wildlife roster includes rare, epic & mythic creatures with small
 
   // Very small roll selects Mythic Aurora Frost-Fenrir
   assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.01), 'aurora_fenrir');
-  // Epic rolls select Mammoth and Sabertooth
+  // Epic rolls select Mammoth, Sabertooth, and Razorback Frost Boar
   assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.03), 'mammoth');
   assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.06), 'sabertooth');
-  // Rare rolls select Polar Bear, Frosthorn Stag, or Tundra Musk Ox
-  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.1), 'polar_bear');
-  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.18), 'frost_stag');
-  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.26), 'musk_ox');
+  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.1), 'frost_boar');
+  // Rare rolls select Polar Bear, Glacier Wolverine, Frosthorn Stag, or Tundra Musk Ox
+  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.15), 'polar_bear');
+  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.24), 'wolverine');
+  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.32), 'frost_stag');
+  assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.4), 'musk_ox');
   // Standard roll backfills missing uncommon Snow Lynx
   assert.equal(pickDynamicWildlifeSpawn(emptyRareCounts, () => 0.65), 'lynx');
 
-  // When rare/epic/mythic are at maxActive (1), even low rolls do not duplicate them
+  // When rare/epic/mythic are at maxActive, even low rolls do not duplicate them
   const cappedRareCounts = {
     ...emptyRareCounts,
+    wolverine: 2,
     polar_bear: 1,
     frost_stag: 1,
     musk_ox: 1,
+    frost_boar: 1,
     mammoth: 1,
     sabertooth: 1,
     aurora_fenrir: 1,

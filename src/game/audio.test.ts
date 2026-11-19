@@ -4,8 +4,46 @@ import {
   computeSpatialDistanceGain,
   computeSpatialStereoPan,
   computeWeatherAmbientMix,
+  getBiomeAudioProfile,
   getSpeciesAttackSoundProfile,
 } from './audio';
+
+test('biome audio profiles shape wind whistling and canopy rustle across zones', () => {
+  const woods = getBiomeAudioProfile('level1');
+  const chasm = getBiomeAudioProfile('level3');
+  const city = getBiomeAudioProfile('city');
+
+  assert.ok(woods.rustleScale > chasm.rustleScale, 'pine woods have stronger needle rustle than ice chasm');
+  assert.ok(chasm.whistleScale > city.whistleScale, 'glacial chasm has stronger wind whistle than sheltered city');
+  assert.ok(woods.callIntervalSec < city.callIntervalSec);
+
+  const woodsMix = computeWeatherAmbientMix({
+    weatherIntensity: 0.5,
+    gustIntensity: 0.4,
+    campDist: 20,
+    campX: 0,
+    campZ: 0,
+    playerX: 10,
+    playerZ: 10,
+    time: 2.0,
+    nearCampfire: false,
+    zone: 'level1',
+  });
+  const cityMix = computeWeatherAmbientMix({
+    weatherIntensity: 0.5,
+    gustIntensity: 0.4,
+    campDist: 20,
+    campX: 0,
+    campZ: 0,
+    playerX: 10,
+    playerZ: 10,
+    time: 2.0,
+    nearCampfire: false,
+    zone: 'city',
+  });
+  assert.ok(woodsMix.whistleGain > cityMix.whistleGain);
+  assert.ok(woodsMix.whistleFilterHz > 200);
+});
 
 test('spatial stereo pan and distance attenuation follow listener coordinates accurately', () => {
   assert.equal(computeSpatialStereoPan(0, 0, 0, 0), 0);

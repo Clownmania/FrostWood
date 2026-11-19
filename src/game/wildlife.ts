@@ -159,6 +159,56 @@ export const SPECIES_SPECS: Record<AnimalKind, SpeciesSpec> = {
     goldDrop: 24,
     predator: true,
   },
+  snow_owl: {
+    kind: 'snow_owl',
+    label: 'Great Snowy Owl',
+    rarity: 'uncommon',
+    targetCount: 2,
+    maxActive: 3,
+    spawnChance: 0.095,
+    maxHp: 82,
+    minSpawnR: 18,
+    maxSpawnR: 44,
+    respawnDelay: 15,
+    wanderSpeed: 3.1,
+    fleeSpeed: 9.2,
+    stalkSpeed: 0,
+    lungeSpeed: 0,
+    lungeDamage: 0,
+    windupDuration: 0,
+    detectRadius: 12.8,
+    spookRadius: 4.6,
+    peltDrop: 3,
+    meatDrop: 2,
+    goldDrop: 22,
+    iceDrop: 1,
+    predator: false,
+  },
+  wolverine: {
+    kind: 'wolverine',
+    label: 'Glacier Wolverine',
+    rarity: 'rare',
+    targetCount: 1,
+    maxActive: 2,
+    spawnChance: 0.085,
+    maxHp: 165,
+    minSpawnR: 23,
+    maxSpawnR: 45,
+    respawnDelay: 24,
+    wanderSpeed: 2.65,
+    fleeSpeed: 5.8,
+    stalkSpeed: 5.4,
+    lungeSpeed: 15.2,
+    lungeDamage: 18,
+    windupDuration: 0.46,
+    detectRadius: 14.8,
+    spookRadius: 4.4,
+    peltDrop: 5,
+    meatDrop: 5,
+    goldDrop: 42,
+    iceDrop: 1,
+    predator: true,
+  },
   polar_bear: {
     kind: 'polar_bear',
     label: 'Arctic Polar Bear',
@@ -233,6 +283,31 @@ export const SPECIES_SPECS: Record<AnimalKind, SpeciesSpec> = {
     goldDrop: 58,
     iceDrop: 1,
     predator: false,
+  },
+  frost_boar: {
+    kind: 'frost_boar',
+    label: 'Razorback Frost Boar',
+    rarity: 'epic',
+    targetCount: 0,
+    maxActive: 1,
+    spawnChance: 0.045,
+    maxHp: 265,
+    minSpawnR: 26,
+    maxSpawnR: 46,
+    respawnDelay: 42,
+    wanderSpeed: 2.4,
+    fleeSpeed: 5.2,
+    stalkSpeed: 5.2,
+    lungeSpeed: 15.8,
+    lungeDamage: 24,
+    windupDuration: 0.56,
+    detectRadius: 15.6,
+    spookRadius: 4.8,
+    peltDrop: 7,
+    meatDrop: 11,
+    goldDrop: 84,
+    iceDrop: 2,
+    predator: true,
   },
   mammoth: {
     kind: 'mammoth',
@@ -316,6 +391,7 @@ export const BASE_WILDLIFE_SPECIES_ORDER: AnimalKind[] = [
   'fox',
   'stag',
   'wolf',
+  'snow_owl',
 ];
 
 export const WILDLIFE_SPECIES_ORDER: AnimalKind[] = [
@@ -324,9 +400,12 @@ export const WILDLIFE_SPECIES_ORDER: AnimalKind[] = [
   'stag',
   'wolf',
   'lynx',
+  'snow_owl',
+  'wolverine',
   'polar_bear',
   'frost_stag',
   'musk_ox',
+  'frost_boar',
   'mammoth',
   'sabertooth',
   'aurora_fenrir',
@@ -336,7 +415,9 @@ export const RARE_AND_EPIC_SPECIES: AnimalKind[] = [
   'aurora_fenrir',
   'mammoth',
   'sabertooth',
+  'frost_boar',
   'polar_bear',
+  'wolverine',
   'frost_stag',
   'musk_ox',
 ];
@@ -421,6 +502,7 @@ export function evaluatePreyReaction(input: PreyReactionInput): PreyReactionResu
     timeOfDay,
   );
   const isLargeGrazer = kind === 'stag' || kind === 'frost_stag' || kind === 'musk_ox';
+  const isCuriousSpecies = kind === 'fox' || kind === 'snow_owl';
 
   let state = input.state;
   let stateTimer = input.stateTimer;
@@ -433,12 +515,12 @@ export function evaluatePreyReaction(input: PreyReactionInput): PreyReactionResu
   // Immediate close/loud spook triggers flee
   if (distPlayer < spookRadius && state !== 'flee') {
     state = 'flee';
-    stateTimer = kind === 'hare' ? 2.1 : kind === 'fox' ? 2.4 : 2.7;
+    stateTimer = kind === 'hare' ? 2.1 : isCuriousSpecies ? 2.4 : 2.7;
     const jitter = kind === 'hare' ? (rng() - 0.5) * 0.7 : (rng() - 0.5) * 0.4;
     wanderAngle = awayAngle + jitter;
   } else if (state === 'flee') {
     stateTimer -= dt;
-    if (kind === 'hare' || kind === 'fox' || kind === 'frost_stag') {
+    if (kind === 'hare' || isCuriousSpecies || kind === 'frost_stag') {
       // Subtle evasive zig-zag while fleeing
       wanderAngle += Math.sin(stateTimer * 7.5) * 1.1 * dt;
     }
@@ -456,7 +538,7 @@ export function evaluatePreyReaction(input: PreyReactionInput): PreyReactionResu
       stateTimer = 2.4;
       wanderAngle = awayAngle + (rng() - 0.5) * 0.35;
     } else if (stateTimer <= 0) {
-      if (kind === 'fox' && playerSpeed < 1.2 && distPlayer < detectRadius) {
+      if (isCuriousSpecies && playerSpeed < 1.2 && distPlayer < detectRadius) {
         state = 'curious';
         stateTimer = 2.2;
       } else if (distPlayer < detectRadius * 0.85 && playerSpeed > 1.6) {
@@ -476,7 +558,7 @@ export function evaluatePreyReaction(input: PreyReactionInput): PreyReactionResu
       vz: 0,
       facingYaw,
     };
-  } else if (state === 'curious' && kind === 'fox') {
+  } else if (state === 'curious' && isCuriousSpecies) {
     stateTimer -= dt;
     if (playerSpeed > 4.8 && distPlayer < detectRadius * 0.8) {
       state = 'alert';
@@ -502,18 +584,18 @@ export function evaluatePreyReaction(input: PreyReactionInput): PreyReactionResu
     }
   } else {
     // 'wander' state checks sensory triggers
-    if (kind === 'fox' && playerSpeed < 1.2 && distPlayer < spec.detectRadius * 0.9) {
+    if (isCuriousSpecies && playerSpeed < 1.2 && distPlayer < spec.detectRadius * 0.9) {
       state = 'curious';
       stateTimer = 2.2;
       facingYaw = towardAngle;
     } else if (distPlayer < detectRadius) {
       if (
         (isLargeGrazer && playerSpeed > 1.5) ||
-        (kind === 'fox' && playerSpeed >= 1.2) ||
+        (isCuriousSpecies && playerSpeed >= 1.2) ||
         (kind === 'hare' && playerSpeed > 4.2)
       ) {
         state = 'alert';
-        stateTimer = isLargeGrazer ? 1.05 : kind === 'fox' ? 0.85 : 0.65;
+        stateTimer = isLargeGrazer ? 1.05 : isCuriousSpecies ? 0.85 : 0.65;
         facingYaw = towardAngle;
         return { state, stateTimer, wanderAngle, vx: 0, vz: 0, facingYaw };
       }
@@ -572,8 +654,9 @@ export function pickMissingSpecies(
 
 /**
  * Dynamic forest population spawner that maintains common/uncommon wildlife while
- * giving Rare (polar_bear, frost_stag) and Epic (mammoth) creatures a small probability
- * of appearing when below their active cap, and adjusting spawn priority by time of day.
+ * giving Rare (polar_bear, frost_stag, wolverine) and Epic (mammoth, frost_boar, sabertooth)
+ * creatures a small probability of appearing when below their active cap, and adjusting
+ * spawn priority by time of day.
  */
 export function pickDynamicWildlifeSpawn(
   counts: Partial<Record<AnimalKind, number>>,
@@ -615,18 +698,21 @@ export function pickDynamicWildlifeSpawn(
   const night = computeNightFactor(timeOfDay);
   const candidates: AnimalKind[] =
     zone === 'level5' || zone === 'level4'
-      ? ['wolf', 'lynx', 'polar_bear', 'sabertooth', 'mammoth', 'frost_stag', 'musk_ox', 'fox']
+      ? ['wolf', 'lynx', 'wolverine', 'frost_boar', 'polar_bear', 'sabertooth', 'mammoth', 'frost_stag', 'musk_ox', 'snow_owl', 'fox']
       : zone === 'level3' || zone === 'level2'
-        ? ['wolf', 'lynx', 'frost_stag', 'musk_ox', 'polar_bear', 'fox', 'hare']
+        ? ['wolf', 'lynx', 'wolverine', 'snow_owl', 'frost_stag', 'musk_ox', 'frost_boar', 'polar_bear', 'fox', 'hare']
         : night > 0.45
-          ? ['wolf', 'lynx', 'fox', 'hare', 'stag']
-          : ['hare', 'fox', 'stag', 'wolf', 'lynx'];
+          ? ['wolf', 'lynx', 'snow_owl', 'wolverine', 'fox', 'hare', 'stag']
+          : ['hare', 'fox', 'stag', 'snow_owl', 'wolf', 'lynx', 'wolverine'];
 
   const highZoneBaselineTargets: Partial<Record<AnimalKind, number>> =
     zone === 'level5'
       ? {
           wolf: 5,
           lynx: 4,
+          wolverine: 3,
+          frost_boar: 2,
+          snow_owl: 2,
           polar_bear: 3,
           sabertooth: 2,
           mammoth: 2,
@@ -638,6 +724,9 @@ export function pickDynamicWildlifeSpawn(
         ? {
             wolf: 5,
             lynx: 4,
+            wolverine: 3,
+            frost_boar: 2,
+            snow_owl: 2,
             polar_bear: 2,
             sabertooth: 2,
             mammoth: 1,
@@ -649,19 +738,25 @@ export function pickDynamicWildlifeSpawn(
           ? {
               hare: 2,
               fox: 3,
+              snow_owl: 2,
               wolf: 5,
               lynx: 3,
+              wolverine: 2,
               frost_stag: 2,
               musk_ox: 2,
+              frost_boar: 1,
               polar_bear: 2,
             }
           : {
               hare: 3,
               fox: 3,
+              snow_owl: 2,
               wolf: 4,
               lynx: 3,
+              wolverine: 2,
               frost_stag: 2,
               musk_ox: 2,
+              frost_boar: 1,
               polar_bear: 1,
             };
 
@@ -721,7 +816,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -62,
     zOffset: 34,
     radius: 26,
-    species: ['hare', 'fox', 'stag'],
+    species: ['hare', 'fox', 'stag', 'snow_owl'],
   },
   {
     id: 'meadow_warrens_south',
@@ -729,7 +824,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 42,
     zOffset: 78,
     radius: 28,
-    species: ['hare', 'fox', 'stag', 'frost_stag'],
+    species: ['hare', 'fox', 'stag', 'snow_owl', 'frost_stag'],
   },
   {
     id: 'whispering_pine_nw',
@@ -737,7 +832,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -82,
     zOffset: -64,
     radius: 30,
-    species: ['fox', 'stag', 'wolf', 'lynx'],
+    species: ['fox', 'stag', 'snow_owl', 'wolf', 'lynx', 'wolverine'],
   },
   {
     id: 'wolf_den_sw',
@@ -745,7 +840,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -88,
     zOffset: 74,
     radius: 28,
-    species: ['wolf', 'lynx', 'sabertooth', 'musk_ox'],
+    species: ['wolf', 'lynx', 'wolverine', 'frost_boar', 'sabertooth', 'musk_ox'],
   },
   {
     id: 'frost_ridge_ne',
@@ -753,7 +848,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 78,
     zOffset: -82,
     radius: 30,
-    species: ['wolf', 'polar_bear', 'frost_stag', 'aurora_fenrir'],
+    species: ['wolf', 'wolverine', 'polar_bear', 'frost_stag', 'aurora_fenrir'],
   },
   {
     id: 'mammoth_hollow_se',
@@ -761,7 +856,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 92,
     zOffset: 78,
     radius: 28,
-    species: ['musk_ox', 'mammoth', 'stag', 'hare'],
+    species: ['musk_ox', 'frost_boar', 'mammoth', 'stag', 'hare'],
   },
   // Level 2: Expanded Glacial Highlands (138m radius) curated dens
   {
@@ -770,7 +865,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -72,
     zOffset: -26,
     radius: 28,
-    species: ['wolf', 'lynx', 'musk_ox', 'polar_bear'],
+    species: ['wolf', 'lynx', 'wolverine', 'musk_ox', 'polar_bear'],
   },
   {
     id: 'aurora_shrine_north',
@@ -778,7 +873,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 12,
     zOffset: -88,
     radius: 30,
-    species: ['aurora_fenrir', 'frost_stag', 'sabertooth', 'mammoth'],
+    species: ['aurora_fenrir', 'frost_stag', 'frost_boar', 'sabertooth', 'mammoth'],
   },
   {
     id: 'ice_crags_east',
@@ -786,7 +881,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 76,
     zOffset: 24,
     radius: 28,
-    species: ['hare', 'fox', 'lynx', 'polar_bear', 'musk_ox'],
+    species: ['hare', 'fox', 'snow_owl', 'lynx', 'wolverine', 'polar_bear', 'musk_ox'],
   },
   // Level 3: Rimefang Abyss (140m radius, 9x Difficulty) curated dens
   {
@@ -795,7 +890,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -68,
     zOffset: -58,
     radius: 30,
-    species: ['wolf', 'lynx', 'polar_bear', 'sabertooth'],
+    species: ['wolf', 'lynx', 'wolverine', 'polar_bear', 'sabertooth'],
   },
   {
     id: 'abyssal_shelf_south',
@@ -803,7 +898,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -24,
     zOffset: 72,
     radius: 28,
-    species: ['musk_ox', 'frost_stag', 'mammoth', 'fox'],
+    species: ['musk_ox', 'frost_boar', 'frost_stag', 'mammoth', 'snow_owl', 'fox'],
   },
   {
     id: 'frozen_fang_ne',
@@ -811,7 +906,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 62,
     zOffset: -66,
     radius: 28,
-    species: ['aurora_fenrir', 'polar_bear', 'wolf', 'hare'],
+    species: ['aurora_fenrir', 'polar_bear', 'wolverine', 'wolf', 'hare'],
   },
   // Level 4: Obsidian Permafrost (144m radius, 27x Difficulty) curated dens
   {
@@ -820,7 +915,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -78,
     zOffset: -24,
     radius: 30,
-    species: ['sabertooth', 'polar_bear', 'wolf', 'lynx'],
+    species: ['sabertooth', 'frost_boar', 'polar_bear', 'wolverine', 'wolf', 'lynx'],
   },
   {
     id: 'permafrost_caldera_south',
@@ -828,7 +923,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 18,
     zOffset: 82,
     radius: 30,
-    species: ['mammoth', 'musk_ox', 'aurora_fenrir', 'frost_stag'],
+    species: ['mammoth', 'frost_boar', 'musk_ox', 'aurora_fenrir', 'frost_stag'],
   },
   {
     id: 'basalt_ridge_east',
@@ -836,7 +931,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 74,
     zOffset: 42,
     radius: 28,
-    species: ['wolf', 'lynx', 'polar_bear', 'fox'],
+    species: ['wolf', 'lynx', 'wolverine', 'polar_bear', 'snow_owl', 'fox'],
   },
   // Level 5: Starfall Eternal Zero (148m radius, 81x Difficulty) curated dens
   {
@@ -845,7 +940,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 14,
     zOffset: -86,
     radius: 32,
-    species: ['aurora_fenrir', 'mammoth', 'sabertooth', 'polar_bear'],
+    species: ['aurora_fenrir', 'mammoth', 'frost_boar', 'sabertooth', 'polar_bear'],
   },
   {
     id: 'eternal_zero_east',
@@ -853,7 +948,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: 84,
     zOffset: 18,
     radius: 30,
-    species: ['polar_bear', 'sabertooth', 'wolf', 'lynx'],
+    species: ['polar_bear', 'wolverine', 'sabertooth', 'wolf', 'lynx'],
   },
   {
     id: 'celestial_drift_south',
@@ -861,7 +956,7 @@ export const ANIMAL_HABITAT_ZONES: HabitatAnchorZone[] = [
     xOffset: -28,
     zOffset: 84,
     radius: 30,
-    species: ['frost_stag', 'musk_ox', 'mammoth', 'aurora_fenrir'],
+    species: ['frost_stag', 'snow_owl', 'musk_ox', 'mammoth', 'aurora_fenrir'],
   },
 ];
 

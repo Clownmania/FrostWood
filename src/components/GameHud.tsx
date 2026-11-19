@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Award,
   Backpack,
+  BedDouble,
   BookOpen,
   Calendar,
   ChevronDown,
@@ -11,15 +12,25 @@ import {
   Cog,
   Compass,
   Crosshair,
+  DoorOpen,
   Eye,
+  Fish,
   Flame,
+  FolderOpen,
+  Gift,
   Hammer,
   Heart,
+  Home,
+  LogOut,
+  Map as MapIcon,
+  Menu,
   MessageSquare,
   Moon,
   Pause,
   PawPrint,
   RotateCcw,
+  Save,
+  Settings,
   Shield,
   Skull,
   Sparkles,
@@ -27,10 +38,12 @@ import {
   Sun,
   Sunrise,
   Sunset,
+  Trash2,
   Trophy,
   Volume2,
   VolumeX,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react';
 import {
@@ -51,6 +64,7 @@ import {
 import {
   ALL_CRAFT_RECIPES,
   canCraftRecipe,
+  getCraftRecipe,
   getLinkedBuffSeconds,
 } from '../game/crafting';
 import {
@@ -87,6 +101,7 @@ import {
   PET_SPECIES_SPECS,
   getTamingPenSpec,
 } from '../game/pets';
+import { SAVE_SLOT_IDS } from '../game/persistence';
 import {
   SKILL_PERKS,
   SKILL_PERK_ORDER,
@@ -97,7 +112,18 @@ import {
   xpRequiredForSkillLevel,
 } from '../game/skills';
 import { computeTouchpadVector } from '../game/kinematics';
+import {
+  MYSTERY_SHOP_ITEMS,
+  MYSTERY_SHOP_ITEM_ORDER,
+  MYTHIC_ASCENSION_ORDER,
+  MYTHIC_ASCENSION_SPECS,
+  RARE_MATERIAL_ORDER,
+  RARE_MATERIAL_SPECS,
+  canBuyMysteryShopItem,
+  canUnlockMythicAscension,
+} from '../game/mystery';
 import { SPECIES_SPECS, WILDLIFE_SPECIES_ORDER } from '../game/wildlife';
+import type { GameSettings } from '../game/settings';
 import type {
   AchievementCategory,
   ActiveTool,
@@ -107,12 +133,16 @@ import type {
   CityTraderId,
   CraftCategory,
   CraftItemId,
+  DrawerTab,
   FestivalBuildingId,
   GearSlotId,
   HudSnapshot,
   ItemRarity,
+  MysteryShopItemId,
+  MythicAscensionId,
   ResourceCounts,
   ResourceTrendDirection,
+  SaveSlotId,
   SkillPerkId,
   ToolUpgradeId,
   TrendResourceKey,
@@ -132,18 +162,9 @@ import {
   WeatherIcon,
   WoodIcon,
 } from './SvgAssets';
+import { InventoryGui } from './InventoryGui';
 import { MinimapOverlay } from './MinimapOverlay';
-
-type DrawerTab =
-  | 'camp'
-  | 'craft'
-  | 'inventory'
-  | 'city'
-  | 'festival'
-  | 'bestiary'
-  | 'pets'
-  | 'achievements'
-  | 'skills';
+import { SettingsPanel } from './SettingsPanel';
 
 interface GameHudProps {
   hud: HudSnapshot;
@@ -172,10 +193,14 @@ interface GameHudProps {
   onCraftItem: (id: CraftItemId) => void;
   onUseBackpackItem: (id: CraftItemId) => void;
   onCraftAndUseItem: (id: CraftItemId) => void;
+  onSalvageBackpackItem: (id: CraftItemId, qty?: number) => void;
   onUnlockSkillPerk: (id: SkillPerkId) => void;
   onRespecSkills: () => void;
   onToggleMute: () => void;
   onPause: () => void;
+  onTitle: () => void;
+  onUpdateSettings: (partial: Partial<GameSettings>) => void;
+  onResetSettings: () => void;
   onUsePortal: () => void;
   onSelectZone: (zone: ZoneId) => void;
   onOpenSecretChest: () => void;
@@ -185,6 +210,22 @@ interface GameHudProps {
   onSetActivePet: (uid: string | null) => void;
   onPetCompanion: (uid: string) => void;
   onAttractWildStray: () => void;
+  onClaimDailyLoginReward: () => void;
+  onSaveGame: (slotId: SaveSlotId) => void;
+  onLoadGame: (slotId: SaveSlotId) => void;
+  onDeleteSave: (slotId: SaveSlotId) => void;
+  onUnlockAscension: (id: MythicAscensionId) => void;
+  onEquipAscension: (id: MythicAscensionId | null) => void;
+  onBuyMysteryItem: (id: MysteryShopItemId) => void;
+  onToggleBowAutoAttack: () => void;
+  onToggleBowAutoAim: () => void;
+  onToggleAutoHarvest: () => void;
+  onEnterCabin: () => void;
+  onExitCabin: () => void;
+  onSleepInCabin: () => void;
+  onTravelToFishingLake: () => void;
+  onCastOrHookFish: () => void;
+  onSetFishingReel: (held: boolean) => void;
 }
 
 function CostTags({
@@ -576,10 +617,14 @@ export function GameHud({
   onCraftItem,
   onUseBackpackItem,
   onCraftAndUseItem,
+  onSalvageBackpackItem,
   onUnlockSkillPerk,
   onRespecSkills,
   onToggleMute,
   onPause,
+  onTitle,
+  onUpdateSettings,
+  onResetSettings,
   onUsePortal,
   onSelectZone,
   onOpenSecretChest,
@@ -589,17 +634,43 @@ export function GameHud({
   onSetActivePet,
   onPetCompanion,
   onAttractWildStray,
+  onClaimDailyLoginReward,
+  onSaveGame,
+  onLoadGame,
+  onDeleteSave,
+  onUnlockAscension,
+  onEquipAscension,
+  onBuyMysteryItem,
+  onToggleBowAutoAttack,
+  onToggleBowAutoAim,
+  onToggleAutoHarvest,
+  onEnterCabin,
+  onExitCabin,
+  onSleepInCabin,
+  onTravelToFishingLake,
+  onCastOrHookFish,
+  onSetFishingReel,
 }: GameHudProps) {
+  const isMinimalHud = hud.settings.hudLayout !== 'expanded';
   const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [hudCompact, setHudCompact] = useState(false);
   const [mobilePlaquesOpen, setMobilePlaquesOpen] = useState(false);
   const [selectedSpecies, setSelectedSpecies] = useState<AnimalKind>('hare');
   const [bestiaryFilter, setBestiaryFilter] = useState<'all' | 'common' | 'rare_epic'>('all');
   const [craftFilter, setCraftFilter] = useState<'all' | CraftCategory>('all');
-  const [stationSection, setStationSection] = useState<'all' | 'craft' | 'gear'>('all');
+  const [stationSection, setStationSection] = useState<'all' | 'craft' | 'gear' | 'tree'>('all');
   const [cityTraderFilter, setCityTraderFilter] = useState<'all' | CityTraderId>('all');
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'unlocked' | AchievementCategory>('all');
-  const [chatBoxCollapsed, setChatBoxCollapsed] = useState(false);
+  const [chatBoxCollapsed, setChatBoxCollapsed] = useState(true);
   const [chatFilter, setChatFilter] = useState<'all' | 'loot' | 'combat' | 'notification'>('all');
+  const [treeTooltip, setTreeTooltip] = useState<{
+    title: string;
+    rarity: string;
+    tier: string;
+    description: string;
+    sourceLocation: string;
+    dropRate: string;
+  } | null>(null);
 
   const axeSpec = getAxeSpec(hud.levels.axe);
   const bowSpec = getBowSpec(hud.levels.bow);
@@ -635,17 +706,20 @@ export function GameHud({
   const allMeatGold = meatCount * meatUnitGold;
   const weatherProfile = getWeatherProfile(hud.weather);
   const isBlizzard = hud.weather === 'blizzard';
-  const frostStrength = hud.stormShelter.shielded
-    ? 0
-    : Math.max(
-        hud.frostIntensity,
-        isChilled ? 0.55 : isBlizzard ? 0.65 : hud.weather === 'light_snow' ? 0.22 : 0,
-      );
+  const frostStrength =
+    hud.housing.inCabin || hud.stormShelter.shielded
+      ? 0
+      : Math.max(
+          hud.frostIntensity,
+          isChilled ? 0.55 : isBlizzard ? 0.65 : hud.weather === 'light_snow' ? 0.22 : 0,
+        );
 
   const buildingIds: BuildingId[] = [
     'cabin',
     'windbreak',
     'thermalConduit',
+    'watchtower',
+    'grandGranary',
     'lumberCamp',
     'sawmill',
     'tannery',
@@ -705,6 +779,33 @@ export function GameHud({
       data-zone={hud.zone.id}
       className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 sm:p-5"
     >
+      {/* Screen-Projected Floating Combat Damage Numbers */}
+      {(hud.damagePopups?.length ?? 0) > 0 && (
+        <div
+          data-testid="combat-damage-popups"
+          aria-hidden="true"
+          className="fixed inset-0 z-20 pointer-events-none overflow-hidden"
+        >
+          {hud.damagePopups!.map((popup) => (
+            <div
+              key={popup.id}
+              className={`absolute animate-dmg-float font-display font-extrabold tabular-nums hud-text-stroke whitespace-nowrap ${
+                popup.isPlayerDamage
+                  ? 'text-base sm:text-lg text-[#fb7185]'
+                  : popup.crit
+                    ? 'text-lg sm:text-xl text-[#fde047]'
+                    : 'text-sm sm:text-base text-[#f8fafc]'
+              }`}
+              style={{
+                left: `${popup.xPct}%`,
+                top: `${popup.yPct}%`,
+              }}
+            >
+              {popup.isPlayerDamage ? `-${popup.amount}` : popup.crit ? `${popup.amount}!` : popup.amount}
+            </div>
+          ))}
+        </div>
+      )}
       {/* Screen-Space Weather Frost & Blowing Mist Overlay */}
       {frostStrength > 0.02 && (
         <div
@@ -735,28 +836,108 @@ export function GameHud({
         />
       )}
 
+      {/* Sleeping Day-Skip Curtain & Progress Banner */}
+      {hud.housing.isSleeping && (() => {
+        const p = hud.housing.sleepProgress;
+        const curtainOpacity =
+          p < 0.36
+            ? 0
+            : p < 0.58
+              ? ((p - 0.36) / 0.22) * 0.72
+              : p < 0.76
+                ? 0.72
+                : Math.max(0, (1 - p) / 0.24) * 0.72;
+        return (
+          <div
+            data-testid="sleep-transition-overlay"
+            className="fixed inset-0 z-30 pointer-events-none flex flex-col items-center justify-start pt-20 sm:pt-24 transition-colors"
+            style={{
+              backgroundColor: `rgba(6, 10, 20, ${curtainOpacity.toFixed(3)})`,
+            }}
+          >
+            <div className="hud-plaque-gold px-5 py-3 rounded-xl border border-[#fbbf24]/75 bg-[#19140e]/95 shadow-[0_14px_34px_rgba(6,10,20,0.82)] flex flex-col items-center gap-1.5 min-w-[290px]">
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold uppercase tracking-wider text-[#fde68a]">
+                <BedDouble className="w-4 h-4 text-[#fbbf24]" />
+                <span>Resting in {hud.housing.bedName}</span>
+              </div>
+              <div className="text-[11px] font-semibold text-[#e2e8f0] tabular-nums">
+                {p >= 0.56
+                  ? `Dawn Awakened · Day ${hud.housing.sleepTargetDay} (06:28 AM)`
+                  : `Sleeping until Day ${hud.housing.sleepTargetDay} Dawn...`}
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-[#0f172a] overflow-hidden mt-0.5">
+                <div
+                  className="h-full bg-gradient-to-r from-[#f59e0b] to-[#fde047] transition-[width] duration-75"
+                  style={{ width: `${Math.round(Math.min(1, Math.max(0, p)) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Top Cluster (Header + Zone Boss Encounter Plaque) */}
-      <div className="flex flex-col w-full">
+      <div className="flex flex-col w-full shrink-0">
         {/* Top Perimeter Clusters */}
         <div className="flex items-start justify-between gap-2 sm:gap-3">
-        {/* Top-Left Resource, Vitals & Daily Objective Stack */}
-        <div className="flex flex-col items-start gap-1.5 sm:gap-2 min-w-0 max-w-[64vw] sm:max-w-none">
-          <div className="pointer-events-auto rounded-xl bg-[#121f31]/94 border border-[#6e8eb0]/45 px-2.5 sm:px-3 py-2 shadow-[0_6px_18px_rgba(8,14,24,0.55)] flex flex-col gap-1.5">
-            <div className="grid grid-cols-3 sm:flex sm:flex-nowrap items-center gap-x-2 sm:gap-x-2.5 gap-y-1">
-              <div className="flex items-center gap-1" title="Wood">
-                <WoodIcon className="w-4 h-4 shrink-0" />
+        {/* Top-Left Resource & Vitals Strip */}
+        <div className="flex flex-col items-start gap-1.5 sm:gap-2 min-w-0 max-w-[calc(100vw-134px)] sm:max-w-none">
+          <div
+            data-testid="hud-vitals-bar"
+            className="pointer-events-auto hud-plaque rounded-xl px-2.5 sm:px-3.5 py-2 flex flex-col gap-1.5 w-full sm:w-auto"
+          >
+            <div className="grid grid-cols-3 sm:flex sm:flex-nowrap items-center gap-x-2.5 sm:gap-x-3 gap-y-1">
+              <div
+                className={`flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors ${
+                  (hud.skillPerkPulse.activeResources.wood ?? 0) > 0
+                    ? 'bg-[#12382b]/90 ring-1 ring-[#6ee7b7]/80'
+                    : ''
+                }`}
+                title="Wood"
+                data-testid={
+                  (hud.skillPerkPulse.activeResources.wood ?? 0) > 0
+                    ? 'resource-skill-pulse-wood'
+                    : undefined
+                }
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  {(hud.skillPerkPulse.activeResources.wood ?? 0) > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-full border border-[#6ee7b7] animate-skill-ring-ripple pointer-events-none"
+                    />
+                  )}
+                  <WoodIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      (hud.skillPerkPulse.activeResources.wood ?? 0) > 0
+                        ? 'animate-skill-icon-pulse'
+                        : ''
+                    }`}
+                  />
+                </div>
                 <div className="leading-none">
-                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb]">
-                    Wood
+                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb] flex items-center gap-1">
+                    <span>Wood</span>
+                    {(hud.skillPerkPulse.activeResources.wood ?? 0) > 0 &&
+                      hud.skillBonuses.gatherYieldMult > 1 && (
+                        <span
+                          data-testid="wood-skill-bonus-pill"
+                          className="px-1 py-0.1 rounded bg-[#10b981] text-[#052e16] text-[8px] font-extrabold tracking-tight"
+                        >
+                          +{Math.round((hud.skillBonuses.gatherYieldMult - 1) * 100)}%
+                        </span>
+                      )}
                   </div>
                   <div className="text-sm sm:text-base font-bold tabular-nums text-[#f4efe6] inline-flex items-center gap-0.5">
                     <span>{hud.resources.wood}</span>
-                    <ResourceTrendArrow
-                      resource="wood"
-                      trend={hud.resourceTrends.wood}
-                      delta={hud.resourceTrendDeltas.wood}
-                    />
-                    {hud.woodRate > 0 && (
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="wood"
+                        trend={hud.resourceTrends.wood}
+                        delta={hud.resourceTrendDeltas.wood}
+                      />
+                    )}
+                    {!isMinimalHud && hud.woodRate > 0 && (
                       <span className="hidden xl:inline text-[10px] font-semibold text-[#8ed49a]">
                         +{hud.woodRate.toFixed(1)}/s
                       </span>
@@ -765,53 +946,164 @@ export function GameHud({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1" title="Stone">
-                <StoneIcon className="w-4 h-4 shrink-0" />
+              <div
+                className={`flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors ${
+                  (hud.skillPerkPulse.activeResources.stone ?? 0) > 0
+                    ? 'bg-[#12382b]/90 ring-1 ring-[#6ee7b7]/80'
+                    : ''
+                }`}
+                title="Stone"
+                data-testid={
+                  (hud.skillPerkPulse.activeResources.stone ?? 0) > 0
+                    ? 'resource-skill-pulse-stone'
+                    : undefined
+                }
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  {(hud.skillPerkPulse.activeResources.stone ?? 0) > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-full border border-[#6ee7b7] animate-skill-ring-ripple pointer-events-none"
+                    />
+                  )}
+                  <StoneIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      (hud.skillPerkPulse.activeResources.stone ?? 0) > 0
+                        ? 'animate-skill-icon-pulse'
+                        : ''
+                    }`}
+                  />
+                </div>
                 <div className="leading-none">
-                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb]">
-                    Stone
+                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb] flex items-center gap-1">
+                    <span>Stone</span>
+                    {(hud.skillPerkPulse.activeResources.stone ?? 0) > 0 &&
+                      hud.skillBonuses.gatherYieldMult > 1 && (
+                        <span
+                          data-testid="stone-skill-bonus-pill"
+                          className="px-1 py-0.1 rounded bg-[#10b981] text-[#052e16] text-[8px] font-extrabold tracking-tight"
+                        >
+                          +{Math.round((hud.skillBonuses.gatherYieldMult - 1) * 100)}%
+                        </span>
+                      )}
                   </div>
                   <div className="text-sm sm:text-base font-bold tabular-nums text-[#dce6f2] inline-flex items-center gap-0.5">
                     <span>{hud.resources.stone ?? 0}</span>
-                    <ResourceTrendArrow
-                      resource="stone"
-                      trend={hud.resourceTrends.stone}
-                      delta={hud.resourceTrendDeltas.stone}
-                    />
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="stone"
+                        trend={hud.resourceTrends.stone}
+                        delta={hud.resourceTrendDeltas.stone}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1" title="Ice Shards">
-                <IceIcon className="w-4 h-4 shrink-0" />
+              <div
+                className={`flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors ${
+                  (hud.skillPerkPulse.activeResources.ice ?? 0) > 0
+                    ? 'bg-[#10344a]/90 ring-1 ring-[#7be0ff]/80'
+                    : ''
+                }`}
+                title="Ice Shards"
+                data-testid={
+                  (hud.skillPerkPulse.activeResources.ice ?? 0) > 0
+                    ? 'resource-skill-pulse-ice'
+                    : undefined
+                }
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  {(hud.skillPerkPulse.activeResources.ice ?? 0) > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-full border border-[#7be0ff] animate-skill-ring-ripple pointer-events-none"
+                    />
+                  )}
+                  <IceIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      (hud.skillPerkPulse.activeResources.ice ?? 0) > 0
+                        ? 'animate-skill-icon-pulse'
+                        : ''
+                    }`}
+                  />
+                </div>
                 <div className="leading-none">
-                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb]">
-                    Ice
+                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb] flex items-center gap-1">
+                    <span>Ice</span>
+                    {(hud.skillPerkPulse.activeResources.ice ?? 0) > 0 &&
+                      hud.skillBonuses.gatherYieldMult > 1 && (
+                        <span
+                          data-testid="ice-skill-bonus-pill"
+                          className="px-1 py-0.1 rounded bg-[#38bdf8] text-[#082f49] text-[8px] font-extrabold tracking-tight"
+                        >
+                          +{Math.round((hud.skillBonuses.gatherYieldMult - 1) * 100)}%
+                        </span>
+                      )}
                   </div>
                   <div className="text-sm sm:text-base font-bold tabular-nums text-[#9fe8ff] inline-flex items-center gap-0.5">
                     <span>{hud.resources.ice ?? 0}</span>
-                    <ResourceTrendArrow
-                      resource="ice"
-                      trend={hud.resourceTrends.ice}
-                      delta={hud.resourceTrendDeltas.ice}
-                    />
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="ice"
+                        trend={hud.resourceTrends.ice}
+                        delta={hud.resourceTrendDeltas.ice}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1" title="Pelts">
-                <PeltIcon className="w-4 h-4 shrink-0" />
+              <div
+                className={`flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors ${
+                  (hud.skillPerkPulse.activeResources.pelts ?? 0) > 0
+                    ? 'bg-[#3b2912]/90 ring-1 ring-[#f6c344]/80'
+                    : ''
+                }`}
+                title="Pelts"
+                data-testid={
+                  (hud.skillPerkPulse.activeResources.pelts ?? 0) > 0
+                    ? 'resource-skill-pulse-pelts'
+                    : undefined
+                }
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  {(hud.skillPerkPulse.activeResources.pelts ?? 0) > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-full border border-[#f6c344] animate-skill-ring-ripple pointer-events-none"
+                    />
+                  )}
+                  <PeltIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      (hud.skillPerkPulse.activeResources.pelts ?? 0) > 0
+                        ? 'animate-skill-icon-pulse'
+                        : ''
+                    }`}
+                  />
+                </div>
                 <div className="leading-none">
-                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb]">
-                    Pelts
+                  <div className="text-[9px] uppercase tracking-wider text-[#9db4cb] flex items-center gap-1">
+                    <span>Pelts</span>
+                    {(hud.skillPerkPulse.activeResources.pelts ?? 0) > 0 &&
+                      hud.skillBonuses.peltYieldMult > 1 && (
+                        <span
+                          data-testid="pelts-skill-bonus-pill"
+                          className="px-1 py-0.1 rounded bg-[#f6c344] text-[#1f1608] text-[8px] font-extrabold tracking-tight"
+                        >
+                          +{Math.round((hud.skillBonuses.peltYieldMult - 1) * 100)}%
+                        </span>
+                      )}
                   </div>
                   <div className="text-sm sm:text-base font-bold tabular-nums text-[#f4efe6] inline-flex items-center gap-0.5">
                     <span>{hud.resources.pelts}</span>
-                    <ResourceTrendArrow
-                      resource="pelts"
-                      trend={hud.resourceTrends.pelts}
-                      delta={hud.resourceTrendDeltas.pelts}
-                    />
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="pelts"
+                        trend={hud.resourceTrends.pelts}
+                        delta={hud.resourceTrendDeltas.pelts}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -827,11 +1119,13 @@ export function GameHud({
                     className="text-sm sm:text-base font-bold tabular-nums text-[#ffe4e6] inline-flex items-center gap-0.5"
                   >
                     <span>{meatCount}</span>
-                    <ResourceTrendArrow
-                      resource="meat"
-                      trend={hud.resourceTrends.meat}
-                      delta={hud.resourceTrendDeltas.meat}
-                    />
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="meat"
+                        trend={hud.resourceTrends.meat}
+                        delta={hud.resourceTrendDeltas.meat}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -847,12 +1141,14 @@ export function GameHud({
                     className="text-sm sm:text-base font-bold tabular-nums text-[#f6c344] inline-flex items-center gap-0.5"
                   >
                     <span>{hud.resources.gold}</span>
-                    <ResourceTrendArrow
-                      resource="gold"
-                      trend={hud.resourceTrends.gold}
-                      delta={hud.resourceTrendDeltas.gold}
-                    />
-                    {hud.goldRate > 0 && (
+                    {!isMinimalHud && (
+                      <ResourceTrendArrow
+                        resource="gold"
+                        trend={hud.resourceTrends.gold}
+                        delta={hud.resourceTrendDeltas.gold}
+                      />
+                    )}
+                    {!isMinimalHud && hud.goldRate > 0 && (
                       <span className="hidden xl:inline text-[10px] font-semibold text-[#ffd978]">
                         +{hud.goldRate.toFixed(1)}/s
                       </span>
@@ -862,129 +1158,287 @@ export function GameHud({
               </div>
             </div>
 
-            {/* HP, Warmth & Backpack Storage Bars */}
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 pt-1 border-t border-[#6e8eb0]/25">
-              <div className="flex items-center gap-1">
+            {/* HP, Warmth, Stamina & Backpack Storage Bars */}
+            <div className="grid grid-cols-4 gap-1 sm:gap-2 pt-1.5 border-t border-[#78a0c8]/25">
+              <div className="flex items-center gap-1 min-w-0">
                 <HeartIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <div className="w-14 sm:w-24">
-                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5">
-                    <span>HP</span>
-                    <span>{hud.hp}/{hud.maxHp}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5 gap-0.5">
+                    <span className="uppercase tracking-wider text-[#9db4cb]">HP</span>
+                    <span className="font-bold text-[#f4efe6]">{hud.hp}/{hud.maxHp}</span>
                   </div>
-                  <div className="h-1.5 sm:h-2 rounded-sm bg-[#0c1420] overflow-hidden border border-[#3e536b]">
+                  <div className="hud-meter-track h-2 sm:h-2.5 rounded-sm overflow-hidden">
                     <div
-                      className="h-full bg-[#e5534b] transition-[width] duration-150"
+                      className="absolute inset-y-0 left-0 bg-[#ffe4e6]/55 transition-[width] duration-700 ease-out pointer-events-none"
                       style={{ width: `${hpPct}%` }}
                     />
+                    <div
+                      className="relative z-[1] h-full bg-gradient-to-b from-[#f06b63] to-[#c43730] shadow-[inset_0_1px_0_rgba(255,210,210,0.45)] transition-[width] duration-150"
+                      style={{ width: `${hpPct}%` }}
+                    />
+                    <div className="hud-meter-ticks absolute inset-0 z-[2] pointer-events-none" />
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 min-w-0">
                 <WarmthIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <div className="w-14 sm:w-24">
-                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5">
-                    <span className="truncate">
-                      {hud.stormShelter.shielded
-                        ? 'Shield'
-                        : hud.nearCampfire
-                          ? 'Warm'
-                          : 'Warmth'}
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5 gap-0.5">
+                    <span className="truncate uppercase tracking-wider text-[#9db4cb]">
+                      {hud.stormShelter.shielded ? 'Shield' : 'Warm'}
                     </span>
-                    <span>{hud.warmth}%</span>
+                    <span className="font-bold text-[#f4efe6] shrink-0">{hud.warmth}%</span>
                   </div>
-                  <div className="h-1.5 sm:h-2 rounded-sm bg-[#0c1420] overflow-hidden border border-[#3e536b]">
+                  <div className="hud-meter-track h-2 sm:h-2.5 rounded-sm overflow-hidden">
                     <div
-                      className={`h-full transition-[width] duration-150 ${
+                      className="absolute inset-y-0 left-0 bg-[#fef3c7]/50 transition-[width] duration-700 ease-out pointer-events-none"
+                      style={{ width: `${warmthPct}%` }}
+                    />
+                    <div
+                      className={`relative z-[1] h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] transition-[width] duration-150 ${
                         hud.stormShelter.shielded
-                          ? 'bg-[#7be0ff]'
+                          ? 'bg-gradient-to-b from-[#96ecff] to-[#3ba9d6]'
                           : isChilled
-                            ? 'bg-[#64c4ff]'
-                            : 'bg-[#f59e3d]'
+                            ? 'bg-gradient-to-b from-[#7ad1ff] to-[#2e8bc7]'
+                            : 'bg-gradient-to-b from-[#ffba59] to-[#d97719]'
                       }`}
                       style={{ width: `${warmthPct}%` }}
                     />
+                    <div className="hud-meter-ticks absolute inset-0 z-[2] pointer-events-none" />
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1" title="Backpack Storage (Wood + Stone + Pelts)">
+              <div className="flex items-center gap-1 min-w-0" title="Stamina (Depletes on actions, regenerates over time)">
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5 gap-0.5">
+                    <span className="uppercase tracking-wider text-[#9db4cb]">Stam</span>
+                    <span className="font-bold text-[#f4efe6]">{hud.stamina ?? 100}</span>
+                  </div>
+                  <div className="hud-meter-track h-2 sm:h-2.5 rounded-sm overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-[#d1fae5]/45 transition-[width] duration-700 ease-out pointer-events-none"
+                      style={{ width: `${Math.max(0, Math.min(100, ((hud.stamina ?? 100) / 100) * 100))}%` }}
+                    />
+                    <div
+                      className="relative z-[1] h-full bg-gradient-to-b from-[#6ee7b7] to-[#059669] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] transition-[width] duration-150"
+                      style={{ width: `${Math.max(0, Math.min(100, ((hud.stamina ?? 100) / 100) * 100))}%` }}
+                    />
+                    <div className="hud-meter-ticks absolute inset-0 z-[2] pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 min-w-0" title="Backpack Storage (Wood + Stone + Pelts)">
                 <Backpack
                   className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
                     packFull ? 'text-[#ef7b73]' : 'text-[#8ed49a]'
                   }`}
                 />
-                <div className="w-14 sm:w-24">
-                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5">
-                    <span>Pack</span>
+                <div className="flex-1 min-w-0 sm:w-20">
+                  <div className="flex justify-between text-[9px] sm:text-[10px] font-semibold tabular-nums text-[#dce6f2] mb-0.5 gap-0.5">
+                    <span className="uppercase tracking-wider text-[#9db4cb]">Pack</span>
                     <span
                       data-testid="backpack-capacity-text"
-                      className={packFull ? 'text-[#ef7b73] font-bold' : ''}
+                      className={packFull ? 'text-[#ef7b73] font-bold shrink-0' : 'font-bold text-[#f4efe6] shrink-0'}
                     >
                       {hud.packUsed}/{hud.packCapacity}
                     </span>
                   </div>
-                  <div className="h-1.5 sm:h-2 rounded-sm bg-[#0c1420] overflow-hidden border border-[#3e536b]">
+                  <div className="hud-meter-track h-2 sm:h-2.5 rounded-sm overflow-hidden">
                     <div
-                      className={`h-full transition-[width] duration-150 ${
+                      className={`h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] transition-[width] duration-150 ${
                         packFull
-                          ? 'bg-[#ef7b73]'
+                          ? 'bg-gradient-to-b from-[#f48b84] to-[#c94a42]'
                           : packPct >= 80
-                            ? 'bg-[#f6c344]'
-                            : 'bg-[#8ed49a]'
+                            ? 'bg-gradient-to-b from-[#ffd56b] to-[#d1901f]'
+                            : 'bg-gradient-to-b from-[#a7e6b2] to-[#53a664]'
                       }`}
                       style={{ width: `${packPct}%` }}
                     />
+                    <div className="hud-meter-ticks absolute inset-0 pointer-events-none" />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Mobile Compact Zone + Calendar/Weather + Objective Toggle Bar */}
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.currentTarget.blur();
-                setMobilePlaquesOpen((prev) => !prev);
-              }}
-              className="sm:hidden flex items-center justify-between gap-2 pt-1 border-t border-[#6e8eb0]/20 text-[10px] font-semibold text-[#b8cbe0] cursor-pointer"
-            >
-              <span className="truncate tabular-nums">
-                {hud.calendar.shortDate} · {weatherProfile.label} ({formatWeatherCountdown(hud.weatherTimeLeft)}) ·{' '}
-                {hud.zone.id === 'city'
-                  ? 'Frostcave City'
-                  : `L${hud.zone.levelNumber}`}
-              </span>
-              <span className="inline-flex items-center gap-0.5 text-[#f6c344] shrink-0">
-                {mobilePlaquesOpen ? 'Hide' : 'Quests'}
-                {mobilePlaquesOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </span>
-            </button>
+            {!isMinimalHud && (
+              <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-[#78a0c8]/20 text-[10px] font-semibold text-[#b8cbe0]">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="hud-compact-toggle"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    if (window.innerWidth < 640) {
+                      setMobilePlaquesOpen((prev) => !prev);
+                    } else {
+                      setHudCompact((prev) => !prev);
+                    }
+                  }}
+                  className="hud-keycap whitespace-nowrap inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded text-[#dce6f2] cursor-pointer transition-colors"
+                >
+                  <span className="sm:hidden">
+                    {mobilePlaquesOpen ? 'Hide' : 'Quests'}
+                  </span>
+                  <span className="hidden sm:inline">
+                    {hudCompact ? 'Expand HUD Panels' : 'Compact HUD'}
+                  </span>
+                  {hudCompact ? <ChevronDown className="w-3 h-3 text-[#f6c344]" /> : <ChevronUp className="w-3 h-3 text-[#f6c344]" />}
+                </button>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {hud.dailyLogin.canClaimToday ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-testid="hud-daily-reward-pill"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        onClaimDailyLoginReward();
+                      }}
+                      className="hud-keycap-active whitespace-nowrap inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded font-extrabold uppercase tracking-wider cursor-pointer transition-colors"
+                    >
+                      <Gift className="w-3 h-3 shrink-0" />
+                      <span className="sm:hidden">D{hud.dailyLogin.todayReward.day} Drop</span>
+                      <span className="hidden sm:inline">Claim Day {hud.dailyLogin.todayReward.day} Drop</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        onOpenTab('daily');
+                      }}
+                      className="hud-keycap whitespace-nowrap inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded text-[#fde68a] cursor-pointer transition-colors"
+                    >
+                      <Gift className="w-3 h-3 text-[#f6c344]" />
+                      <span>{hud.dailyLogin.streakDay}d</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="hud-quick-save-pill"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      onSaveGame('slot1');
+                    }}
+                    title="Quick Save to Slot 1 [F5]"
+                    className="whitespace-nowrap inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded bg-gradient-to-b from-[#214534] to-[#162f23] hover:from-[#295742] hover:to-[#1c3d2e] border border-[#8ed49a]/55 text-[#a7f3d0] cursor-pointer shadow-[inset_0_1px_0_rgba(167,243,208,0.18)] transition-colors"
+                  >
+                    <Save className="w-3 h-3" />
+                    <span className="hidden sm:inline">Save</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Daily Objective & Seasonal Event Plaques (Always visible on PC, expandable on Mobile) */}
-          <div className={`${mobilePlaquesOpen ? 'flex' : 'hidden sm:flex'} flex-col items-start gap-2`}>
+          {/* Active Skill Perk Gathering Bonus Visual Effect & Icon Pulse Plaque */}
+          {hud.skillPerkPulse.active && (
+            <button
+              key={`perk-pulse-${hud.skillPerkPulse.perkId}-${hud.skillPerkPulse.pulseNonce}`}
+              type="button"
+              tabIndex={-1}
+              data-testid="skill-perk-bonus-pulse"
+              data-perk-id={hud.skillPerkPulse.perkId ?? ''}
+              data-pulse-nonce={hud.skillPerkPulse.pulseNonce}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onOpenTab('skills');
+              }}
+              className="pointer-events-auto w-64 sm:w-72 text-left rounded-lg hud-plaque-skill-pulse border-l-[3px] border-l-[#34d399] px-3 py-2 cursor-pointer animate-skill-plaque-pop transition-transform hover:brightness-110"
+            >
+              <div className="flex items-center gap-2.5">
+                {/* Pulsing Skill Perk Emblem Icon with Expanding Shockwave Ring */}
+                <div
+                  data-testid="skill-perk-pulse-icon"
+                  className="relative w-8 h-8 rounded-lg bg-gradient-to-b from-[#10b981]/35 to-[#047857]/45 border border-[#6ee7b7] flex items-center justify-center shrink-0"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-lg border-2 border-[#6ee7b7] animate-skill-ring-ripple pointer-events-none"
+                  />
+                  <Award className="w-4 h-4 text-[#a7f3d0] animate-skill-icon-pulse" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#6ee7b7] truncate">
+                      Skill Perk Bonus · R{hud.skillPerkPulse.rank}/{hud.skillPerkPulse.maxRank}
+                    </span>
+                    <span
+                      data-testid="skill-perk-bonus-pct"
+                      className="px-1.5 py-0.2 rounded bg-[#10b981] text-[#042f2e] text-[9px] font-extrabold uppercase tracking-wider tabular-nums shrink-0"
+                    >
+                      +{hud.skillPerkPulse.bonusPct}% Yield
+                    </span>
+                  </div>
+
+                  <div className="mt-0.5 flex items-center justify-between gap-1.5">
+                    <span
+                      data-testid="skill-perk-bonus-name"
+                      className="text-xs font-extrabold text-[#f0fdf4] truncate"
+                    >
+                      {hud.skillPerkPulse.perkName}
+                    </span>
+                    <span className="text-[10px] font-bold text-[#fde68a] truncate shrink-0">
+                      {hud.skillPerkPulse.taskLabel}
+                    </span>
+                  </div>
+
+                  <div className="mt-0.5 flex items-center justify-between gap-1.5 text-[10px] font-semibold text-[#a7f3d0] tabular-nums">
+                    <span className="truncate">{hud.skillPerkPulse.secondaryBonusText}</span>
+                    <span>{hud.skillPerkPulse.timeRemaining.toFixed(1)}s</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hud-meter-track mt-1.5 h-1.5 rounded-sm overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#34d399] via-[#6ee7b7] to-[#facc15] transition-[width] duration-100"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (hud.skillPerkPulse.timeRemaining /
+                          Math.max(0.1, hud.skillPerkPulse.duration)) *
+                          100,
+                      ),
+                    )}%`,
+                  }}
+                />
+              </div>
+            </button>
+          )}
+
+          {/* Daily Objective & Seasonal Event Plaques (Classic HUD Mode Only) */}
+          <div className={`${isMinimalHud || hudCompact ? 'hidden' : mobilePlaquesOpen ? 'flex' : 'hidden sm:flex'} flex-col items-start gap-2`}>
           {(() => {
             const obj = hud.dailyObjective;
             const objPct = Math.max(0, Math.min(100, (obj.progress / Math.max(1, obj.target)) * 100));
             const objUrgent = !obj.completed && !obj.failed && obj.timeLeft <= 15;
-            const borderCls = obj.completed
-              ? 'border-[#8ed49a]/70'
+            const plaqueCls = obj.completed
+              ? 'hud-plaque border-l-[3px] border-l-[#8ed49a]'
               : obj.failed
-                ? 'border-[#ef7b73]/65'
+                ? 'hud-plaque-crimson border-l-[3px] border-l-[#ef7b73]'
                 : objUrgent
-                  ? 'border-[#f59e3d]/70'
-                  : 'border-[#6e8eb0]/45';
+                  ? 'hud-plaque-gold border-l-[3px] border-l-[#f59e3d]'
+                  : 'hud-plaque border-l-[3px] border-l-[#f6c344]';
             const barCls = obj.completed
-              ? 'bg-[#8ed49a]'
+              ? 'bg-gradient-to-b from-[#a7e6b2] to-[#53a664]'
               : obj.failed
-                ? 'bg-[#ef7b73]'
-                : 'bg-[#f6c344]';
+                ? 'bg-gradient-to-b from-[#f48b84] to-[#c94a42]'
+                : 'bg-gradient-to-b from-[#ffd56b] to-[#d98a2b]';
             return (
               <div
                 data-testid="daily-objective"
-                className={`pointer-events-auto w-64 sm:w-72 rounded-lg bg-[#162336]/90 border ${borderCls} px-3.5 py-2 shadow-[0_6px_18px_rgba(8,14,24,0.5)]`}
+                className={`pointer-events-auto w-64 sm:w-72 rounded-lg ${plaqueCls} px-3.5 py-2`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9db4cb]">
@@ -1018,11 +1472,12 @@ export function GameHud({
                   </span>
                 </div>
 
-                <div className="mt-1.5 h-1.5 rounded-sm bg-[#0c1420] overflow-hidden border border-[#3e536b]">
+                <div className="hud-meter-track mt-1.5 h-2 rounded-sm overflow-hidden">
                   <div
-                    className={`h-full transition-[width] duration-150 ${barCls}`}
+                    className={`h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-[width] duration-150 ${barCls}`}
                     style={{ width: `${objPct}%` }}
                   />
+                  <div className="hud-meter-ticks absolute inset-0 pointer-events-none" />
                 </div>
 
                 <div className="mt-1.5 flex items-center justify-between text-[10px] font-semibold tabular-nums">
@@ -1049,6 +1504,48 @@ export function GameHud({
             );
           })()}
 
+          {/* Harvest Streak Plaque */}
+          {hud.harvestStreak.count > 0 && (
+            <div
+              data-testid="harvest-streak-plaque"
+              className="pointer-events-auto w-64 sm:w-72 rounded-lg hud-plaque-gold border-l-[3px] border-l-[#f59e3d] px-3.5 py-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#f59e3d]">
+                  🔥 Harvest Streak
+                </span>
+                <span className="text-xs font-bold tabular-nums text-[#fde68a]">
+                  {Math.ceil(hud.harvestStreak.timeRemaining)}s
+                </span>
+              </div>
+
+              <div className="mt-0.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-[#f4efe6]">
+                  Streak {hud.harvestStreak.count}x
+                </span>
+                <span className="text-xs font-bold tabular-nums text-[#8ed49a]">
+                  +{hud.harvestStreak.yieldBonusPct}% Wood Yield
+                </span>
+              </div>
+
+              <div className="hud-meter-track mt-1.5 h-2 rounded-sm overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-b from-[#ffd56b] to-[#d98a2b] shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-[width] duration-150"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (hud.harvestStreak.timeRemaining / hud.harvestStreak.maxTime) * 100,
+                      ),
+                    )}%`,
+                  }}
+                />
+                <div className="hud-meter-ticks absolute inset-0 pointer-events-none" />
+              </div>
+            </div>
+          )}
+
           {/* Seasonal Event Plaque */}
           <button
             type="button"
@@ -1058,10 +1555,10 @@ export function GameHud({
               e.currentTarget.blur();
               onOpenTab('festival');
             }}
-            className={`pointer-events-auto w-64 sm:w-72 text-left rounded-lg px-3.5 py-2 shadow-[0_6px_18px_rgba(8,14,24,0.5)] border transition-colors cursor-pointer ${
+            className={`pointer-events-auto w-64 sm:w-72 text-left rounded-lg px-3.5 py-2 transition-colors cursor-pointer ${
               hud.seasonalEvent.active
-                ? 'bg-[#172e47]/95 border-[#7be0ff]/75 hover:bg-[#1e3a59]'
-                : 'bg-[#162336]/90 border-[#6e8eb0]/45 hover:bg-[#1d2e46]'
+                ? 'hud-plaque-frost border-l-[3px] border-l-[#7be0ff] hover:brightness-110'
+                : 'hud-plaque border-l-[3px] border-l-[#6e8eb0] hover:brightness-110'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1100,14 +1597,14 @@ export function GameHud({
           {hud.stormShelter.level > 0 && (
             <div
               data-testid="storm-shelter-status"
-              className={`pointer-events-auto w-64 sm:w-72 rounded-lg px-3.5 py-2 border shadow-[0_6px_18px_rgba(8,14,24,0.5)] ${
+              className={`pointer-events-auto w-64 sm:w-72 rounded-lg px-3.5 py-2 ${
                 hud.stormShelter.shielded
-                  ? 'bg-[#12334a]/95 border-[#8ce8ff]/85'
+                  ? 'hud-plaque-frost border-l-[3px] border-l-[#8ce8ff]'
                   : hud.stormShelter.phase === 'active'
-                    ? 'bg-[#172e47]/92 border-[#7be0ff]/60'
+                    ? 'hud-plaque-frost'
                     : hud.stormShelter.phase === 'cooldown'
-                      ? 'bg-[#162336]/90 border-[#6e8eb0]/45'
-                      : 'bg-[#1a2b40]/92 border-[#f6c344]/55'
+                      ? 'hud-plaque'
+                      : 'hud-plaque-gold border-l-[3px] border-l-[#f6c344]'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -1146,8 +1643,9 @@ export function GameHud({
           )}
           </div>
 
-          {/* Active Crafted Item Buffs & Pack Preparedness Link */}
-          {(hud.activeBuffs.fireStarter > 0 ||
+          {/* Active Crafted Item Buffs & Pack Preparedness Link (Classic HUD Only) */}
+          {!isMinimalHud &&
+            (hud.activeBuffs.fireStarter > 0 ||
             hud.activeBuffs.insulatedBoots > 0 ||
             hud.activeBuffs.flintEdge > 0 ||
             (hud.activeBuffs.frostWhetstone ?? 0) > 0 ||
@@ -1226,7 +1724,7 @@ export function GameHud({
           {hud.trackedQuarry && (
             <div
               data-testid="quarry-tracker"
-              className="pointer-events-auto w-64 sm:w-72 rounded-lg px-3.5 py-2 border border-[#5be7ff]/70 bg-[#102638]/94 shadow-[0_6px_18px_rgba(8,14,24,0.55)]"
+              className="pointer-events-auto w-64 sm:w-72 rounded-lg px-3.5 py-2 hud-plaque-frost border-l-[3px] border-l-[#5be7ff]"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#7be0ff]">
@@ -1249,10 +1747,12 @@ export function GameHud({
                   {hud.trackedQuarry.distance}m {hud.trackedQuarry.direction}
                 </span>
               </div>
-              <div className="mt-1 h-1.5 rounded-sm bg-[#0c1420] overflow-hidden border border-[#3e536b]">
+              <div className="hud-meter-track mt-1 h-2 rounded-sm overflow-hidden">
                 <div
-                  className={`h-full transition-[width] duration-150 ${
-                    hud.trackedQuarry.predator ? 'bg-[#ef7b73]' : 'bg-[#8ed49a]'
+                  className={`h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-[width] duration-150 ${
+                    hud.trackedQuarry.predator
+                      ? 'bg-gradient-to-b from-[#f48b84] to-[#c94a42]'
+                      : 'bg-gradient-to-b from-[#a7e6b2] to-[#53a664]'
                   }`}
                   style={{
                     width: `${Math.max(
@@ -1264,6 +1764,7 @@ export function GameHud({
                     )}%`,
                   }}
                 />
+                <div className="hud-meter-ticks absolute inset-0 pointer-events-none" />
               </div>
               <div className="mt-1 flex items-center justify-between text-[10px] font-semibold tabular-nums text-[#b8cbe0]">
                 <span>
@@ -1277,15 +1778,20 @@ export function GameHud({
           )}
 
           {/* Rival Hunter / Rare Enemy Encounter Alert Plaque */}
-          {hud.rivalHunters.length > 0 && hud.rivalHunters[0].distance <= 48 && (
+          {hud.rivalHunters.length > 0 &&
+            hud.rivalHunters[0].distance <= 48 &&
+            (!isMinimalHud ||
+              hud.rivalHunters[0].distance <= 22 ||
+              hud.rivalHunters[0].state === 'attacking' ||
+              hud.rivalHunters[0].state === 'charging') && (
             <div
               data-testid="rival-hunter-alert"
-              className={`pointer-events-auto w-64 sm:w-72 rounded-lg px-3.5 py-2 border shadow-[0_6px_18px_rgba(24,6,8,0.65)] ${
+              className={`pointer-events-auto w-[236px] sm:w-72 rounded-lg px-3 sm:px-3.5 py-2 border-l-[3px] ${
                 hud.rivalHunters[0].rarity === 'mythic'
-                  ? 'border-[#c084fc]/90 bg-[#251338]/95'
+                  ? 'hud-plaque border-l-[#c084fc] border-[#c084fc]/70'
                   : hud.rivalHunters[0].rarity === 'rare'
-                    ? 'border-[#38bdf8]/90 bg-[#12263a]/95'
-                    : 'border-[#ef4444]/85 bg-[#2e1014]/94'
+                    ? 'hud-plaque-frost border-l-[#38bdf8]'
+                    : 'hud-plaque-crimson border-l-[#ef4444]'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -1339,14 +1845,14 @@ export function GameHud({
                   {hud.rivalHunters[0].distance}m {hud.rivalHunters[0].direction}
                 </span>
               </div>
-              <div className="mt-1 h-1.5 rounded-sm bg-[#180709] overflow-hidden border border-[#7f1d1d]">
+              <div className="hud-meter-track mt-1 h-2 rounded-sm overflow-hidden">
                 <div
-                  className={`h-full transition-[width] duration-150 ${
+                  className={`h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-[width] duration-150 ${
                     hud.rivalHunters[0].rarity === 'mythic'
-                      ? 'bg-[#c084fc]'
+                      ? 'bg-gradient-to-b from-[#d8b4fe] to-[#9333ea]'
                       : hud.rivalHunters[0].rarity === 'rare'
-                        ? 'bg-[#38bdf8]'
-                        : 'bg-[#ef4444]'
+                        ? 'bg-gradient-to-b from-[#7dd3fc] to-[#0284c7]'
+                        : 'bg-gradient-to-b from-[#f87171] to-[#dc2626]'
                   }`}
                   style={{
                     width: `${Math.max(
@@ -1358,6 +1864,7 @@ export function GameHud({
                     )}%`,
                   }}
                 />
+                <div className="hud-meter-ticks absolute inset-0 pointer-events-none" />
               </div>
               <div className="mt-1 flex items-center justify-between text-[10px] font-semibold tabular-nums text-[#fecdd3]">
                 <span>
@@ -1376,15 +1883,15 @@ export function GameHud({
             </div>
           )}
 
-          {/* Left-Side Activity ChatBox (Drops, Loot, Tactical Combat & Notifications) */}
-          {!drawerOpen && (
+          {/* Left-Side Activity ChatBox (Classic HUD Mode Only; moved into World & Travel inside 1 Menu in Minimal mode) */}
+          {!isMinimalHud && !drawerOpen && (
             <div
               data-testid="activity-chatbox"
               data-collapsed={chatBoxCollapsed ? 'true' : 'false'}
-              className="pointer-events-auto w-64 sm:w-72 rounded-xl bg-[#0e1928]/94 border border-[#6e8eb0]/50 shadow-[0_8px_22px_rgba(6,11,20,0.65)] overflow-hidden"
+              className="pointer-events-auto w-[236px] sm:w-72 rounded-xl hud-plaque overflow-hidden"
             >
               {/* ChatBox Header */}
-              <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[#152438]/95 border-b border-[#6e8eb0]/35">
+              <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-[#101c2d]/95 border-b border-[#78a0c8]/25">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <MessageSquare className="w-3.5 h-3.5 text-[#7be0ff] shrink-0" />
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#e2eefb] truncate">
@@ -1531,154 +2038,188 @@ export function GameHud({
           )}
         </div>
 
-        {/* Top-Right Zone Compass, Time-of-Day, Weather, Camp Tier, Controls & World Minimap */}
+        {/* Top-Right Compact Zone, Weather, Menu, Pause & Minimap */}
         <div className="flex flex-col items-end gap-1.5 sm:gap-2 shrink-0">
           <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-            <div
-              data-testid="zone-status"
-              data-difficulty-mult={hud.zone.difficultyMult}
-              className={`hidden sm:flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
-                hud.zone.id === 'city'
-                  ? 'bg-[#261d11]/95 border-[#f6c344]/70'
-                  : hud.zone.id === 'level5'
-                    ? 'bg-[#281236]/95 border-[#e879f9]/75'
-                    : hud.zone.id === 'level4'
-                      ? 'bg-[#2b1414]/95 border-[#f87171]/70'
-                      : hud.zone.id === 'level3'
-                        ? 'bg-[#1f1635]/95 border-[#a855f7]/70'
-                        : hud.zone.id === 'level2'
-                          ? 'bg-[#102c3d]/95 border-[#5be7ff]/65'
-                          : 'bg-[#162336]/90 border-[#6e8eb0]/45'
-              }`}
-            >
-              <Compass
-                className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
-                  hud.zone.id === 'city'
-                    ? 'text-[#f6c344]'
-                    : hud.zone.id === 'level5'
-                      ? 'text-[#f0abfc]'
-                      : hud.zone.id === 'level4'
-                        ? 'text-[#fca5a5]'
-                        : hud.zone.id === 'level3'
-                          ? 'text-[#c084fc]'
-                          : hud.zone.id === 'level2'
-                            ? 'text-[#7be0ff]'
-                            : 'text-[#9db4cb]'
-                }`}
-              />
-              <div className="leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    data-testid="zone-indicator-badge"
-                    className="text-[9px] sm:text-[10px] uppercase tracking-wider text-[#9db4cb]"
-                  >
-                    {hud.zone.id === 'city'
-                      ? 'Cavern Sanctuary · Frostcave City'
-                      : `Level ${hud.zone.levelNumber} · ${hud.zone.name}`}
-                  </span>
-                  <span
-                    data-testid="zone-difficulty-badge"
-                    className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider tabular-nums ${
+            {isMinimalHud ? (
+              <div
+                data-testid="zone-status"
+                data-difficulty-mult={hud.zone.difficultyMult}
+                className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg hud-plaque text-xs font-bold tabular-nums text-[#e2eefb]"
+              >
+                <Compass className="w-3.5 h-3.5 text-[#7be0ff] shrink-0" />
+                <span>
+                  {hud.zone.id === 'city' ? 'City' : `L${hud.zone.levelNumber} · ${hud.zone.name}`}
+                </span>
+                <span className="text-[#6e8eb0]">|</span>
+                <WeatherIcon weather={hud.weather} className="w-3.5 h-3.5 shrink-0" />
+                <span>{weatherProfile.label}</span>
+                <span className="text-[#6e8eb0]">|</span>
+                <span className="text-[#f6c344]">Day {hud.dayNight.dayNumber}</span>
+              </div>
+            ) : (
+              <>
+                <div
+                  data-testid="zone-status"
+                  data-difficulty-mult={hud.zone.difficultyMult}
+                  className={`hidden sm:flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg ${
+                    hud.zone.id === 'city'
+                      ? 'hud-plaque-gold'
+                      : hud.zone.id === 'level5'
+                        ? 'hud-plaque border-[#e879f9]/70'
+                        : hud.zone.id === 'level4'
+                          ? 'hud-plaque-crimson'
+                          : hud.zone.id === 'level3'
+                            ? 'hud-plaque border-[#a855f7]/70'
+                            : hud.zone.id === 'level2'
+                              ? 'hud-plaque-frost'
+                              : 'hud-plaque'
+                  }`}
+                >
+                  <Compass
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
                       hud.zone.id === 'city'
-                        ? 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/50'
-                        : hud.zone.difficultyMult >= 27
-                          ? 'bg-[#450a0a] text-[#fecaca] border border-[#f87171]/60'
-                          : hud.zone.difficultyMult >= 9
-                            ? 'bg-[#3b0764] text-[#f3e8ff] border border-[#c084fc]/60'
-                            : hud.zone.difficultyMult >= 3
-                              ? 'bg-[#0c4a6e] text-[#e0f2fe] border border-[#38bdf8]/60'
-                              : 'bg-[#1e293b] text-[#cbd5e1] border border-[#64748b]/50'
+                        ? 'text-[#f6c344]'
+                        : hud.zone.id === 'level5'
+                          ? 'text-[#f0abfc]'
+                          : hud.zone.id === 'level4'
+                            ? 'text-[#fca5a5]'
+                            : hud.zone.id === 'level3'
+                              ? 'text-[#c084fc]'
+                              : hud.zone.id === 'level2'
+                                ? 'text-[#7be0ff]'
+                                : 'text-[#9db4cb]'
                     }`}
+                  />
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        data-testid="zone-indicator-badge"
+                        className="text-[9px] sm:text-[10px] uppercase tracking-wider text-[#9db4cb]"
+                      >
+                        {hud.zone.id === 'city'
+                          ? 'Cavern Sanctuary · Frostcave City'
+                          : `Level ${hud.zone.levelNumber} · ${hud.zone.name}`}
+                      </span>
+                      <span
+                        data-testid="zone-difficulty-badge"
+                        className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider tabular-nums ${
+                          hud.zone.id === 'city'
+                            ? 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/50'
+                            : hud.zone.difficultyMult >= 27
+                              ? 'bg-[#450a0a] text-[#fecaca] border border-[#f87171]/60'
+                              : hud.zone.difficultyMult >= 9
+                                ? 'bg-[#3b0764] text-[#f3e8ff] border border-[#c084fc]/60'
+                                : hud.zone.difficultyMult >= 3
+                                  ? 'bg-[#0c4a6e] text-[#e0f2fe] border border-[#38bdf8]/60'
+                                  : 'bg-[#1e293b] text-[#cbd5e1] border border-[#64748b]/50'
+                        }`}
+                      >
+                        {hud.zone.id === 'city' ? 'Safe Sanctuary' : `${hud.zone.difficultyMult}x Toughness`}
+                      </span>
+                    </div>
+                    <div className="text-[10px] sm:text-[11px] font-bold tabular-nums text-[#dce6f2]">
+                      {hud.zone.id === 'city'
+                        ? `West Gate ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Bazaar [T]`
+                        : hud.zone.id === 'level1'
+                          ? `L2 ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · City ${hud.zone.cityPortalDistance ?? 144}m ${hud.zone.cityPortalDirection ?? 'E'}`
+                          : hud.zone.forwardPortalDistance !== undefined
+                            ? `Ret ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Next L${hud.zone.levelNumber + 1} ${hud.zone.forwardPortalDistance}m ${hud.zone.forwardPortalDirection}`
+                            : `Return ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · +${Math.round((hud.zone.yieldMult - 1) * 100)}% Yield`}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  data-testid="day-night-status"
+                  className={`hidden 2xl:flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${
+                    hud.dayNight.phase === 'night'
+                      ? 'hud-plaque-frost'
+                      : hud.dayNight.phase === 'dusk' || hud.dayNight.phase === 'dawn'
+                        ? 'hud-plaque-gold'
+                        : 'hud-plaque'
+                  }`}
+                >
+                  {hud.dayNight.phase === 'night' ? (
+                    <Moon className="w-4 h-4 shrink-0 text-[#9bc2ff]" />
+                  ) : hud.dayNight.phase === 'dawn' ? (
+                    <Sunrise className="w-4 h-4 shrink-0 text-[#ffbe85]" />
+                  ) : hud.dayNight.phase === 'dusk' ? (
+                    <Sunset className="w-4 h-4 shrink-0 text-[#ff9b6e]" />
+                  ) : (
+                    <Sun className="w-4 h-4 shrink-0 text-[#f6c344]" />
+                  )}
+                  <div className="leading-tight">
+                    <div className="text-[10px] uppercase tracking-wider text-[#9db4cb] tabular-nums">
+                      {hud.calendar.shortDate} · {hud.calendar.weekdayName} · {hud.dayNight.clockLabel}
+                    </div>
+                    <div className="text-[11px] font-bold tabular-nums text-[#dce6f2]">
+                      {hud.calendar.todayEvent
+                        ? `${hud.calendar.todayEvent.title} · ${hud.dayNight.phaseLabel}`
+                        : `Chill ${hud.dayNight.tempDecayMult.toFixed(2)}× · ${hud.dayNight.wildlifeActivityLabel}`}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  data-testid="weather-status"
+                  className={`hidden sm:flex items-center gap-2 px-2.5 py-1 sm:py-1.5 rounded-lg ${
+                    isBlizzard ? 'hud-plaque-frost' : 'hud-plaque'
+                  }`}
+                >
+                  <WeatherIcon weather={hud.weather} className="w-4 h-4 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="text-[10px] uppercase tracking-wider text-[#9db4cb]">
+                      {weatherProfile.label}
+                    </div>
+                    <div className="text-xs font-bold tabular-nums text-[#dce6f2]">
+                      {formatWeatherCountdown(hud.weatherTimeLeft)} · Day {hud.dayNight.dayNumber}
+                    </div>
+                  </div>
+                </div>
+
+                {hud.housing.inCabin ? (
+                  <div
+                    data-testid="cabin-interior-badge"
+                    className="flex items-center gap-2 px-2.5 py-1 sm:py-1.5 rounded-lg hud-plaque-gold border border-[#fbbf24]/65"
                   >
-                    {hud.zone.id === 'city' ? 'Safe Sanctuary' : `${hud.zone.difficultyMult}x Toughness`}
-                  </span>
-                </div>
-                <div className="text-[10px] sm:text-[11px] font-bold tabular-nums text-[#dce6f2]">
-                  {hud.zone.id === 'city'
-                    ? `West Gate ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Bazaar [T]`
-                    : hud.zone.id === 'level1'
-                      ? `L2 ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · City ${hud.zone.cityPortalDistance ?? 144}m ${hud.zone.cityPortalDirection ?? 'E'}`
-                      : hud.zone.forwardPortalDistance !== undefined
-                        ? `Ret ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · Next L${hud.zone.levelNumber + 1} ${hud.zone.forwardPortalDistance}m ${hud.zone.forwardPortalDirection}`
-                        : `Return ${hud.zone.portalDistance}m ${hud.zone.portalDirection} · +${Math.round((hud.zone.yieldMult - 1) * 100)}% Yield`}
-                </div>
-              </div>
-            </div>
-
-            <div
-              data-testid="day-night-status"
-              className={`hidden 2xl:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
-                hud.dayNight.phase === 'night'
-                  ? 'bg-[#121e33]/95 border-[#7ea8eb]/60'
-                  : hud.dayNight.phase === 'dusk' || hud.dayNight.phase === 'dawn'
-                    ? 'bg-[#251f33]/92 border-[#f2a679]/55'
-                    : 'bg-[#162336]/90 border-[#6e8eb0]/45'
-              }`}
-            >
-              {hud.dayNight.phase === 'night' ? (
-                <Moon className="w-4 h-4 shrink-0 text-[#9bc2ff]" />
-              ) : hud.dayNight.phase === 'dawn' ? (
-                <Sunrise className="w-4 h-4 shrink-0 text-[#ffbe85]" />
-              ) : hud.dayNight.phase === 'dusk' ? (
-                <Sunset className="w-4 h-4 shrink-0 text-[#ff9b6e]" />
-              ) : (
-                <Sun className="w-4 h-4 shrink-0 text-[#f6c344]" />
-              )}
-              <div className="leading-tight">
-                <div className="text-[10px] uppercase tracking-wider text-[#9db4cb] tabular-nums">
-                  {hud.calendar.shortDate} · {hud.calendar.weekdayName} · {hud.dayNight.clockLabel}
-                </div>
-                <div className="text-[11px] font-bold tabular-nums text-[#dce6f2]">
-                  {hud.calendar.todayEvent
-                    ? `${hud.calendar.todayEvent.title} · ${hud.dayNight.phaseLabel}`
-                    : `Chill ${hud.dayNight.tempDecayMult.toFixed(2)}× · ${hud.dayNight.wildlifeActivityLabel}`}
-                </div>
-              </div>
-            </div>
-
-            <div
-              data-testid="weather-status"
-              className={`hidden sm:flex items-center gap-2 px-2.5 py-1 sm:py-1.5 rounded-lg border shadow-[0_4px_14px_rgba(8,14,24,0.45)] ${
-                isBlizzard
-                  ? 'bg-[#1c334d]/95 border-[#8fd6ff]/65'
-                  : 'bg-[#162336]/90 border-[#6e8eb0]/45'
-              }`}
-            >
-              <WeatherIcon weather={hud.weather} className="w-4 h-4 shrink-0" />
-              <div className="leading-tight">
-                <div className="text-[10px] uppercase tracking-wider text-[#9db4cb]">
-                  {weatherProfile.label}
-                </div>
-                <div className="text-xs font-bold tabular-nums text-[#dce6f2]">
-                  {formatWeatherCountdown(hud.weatherTimeLeft)} · Day {hud.dayNight.dayNumber}
-                </div>
-              </div>
-            </div>
-
-            <div className="hidden 2xl:flex flex-col items-end px-2.5 py-1.5 rounded-lg bg-[#162336]/90 border border-[#6e8eb0]/45 shadow-[0_4px_14px_rgba(8,14,24,0.45)]">
-              <div className="text-[10px] uppercase tracking-wider text-[#9db4cb]">
-                {cabinSpec.name}
-              </div>
-              <div className="text-xs font-bold tabular-nums text-[#f6c344]">
-                Tier {hud.levels.cabin}/5 · {hud.workerCount} Workers
-              </div>
-            </div>
+                    <Home className="w-4 h-4 shrink-0 text-[#fbbf24]" />
+                    <div className="leading-tight">
+                      <div className="text-[10px] uppercase tracking-wider text-[#fde68a]">
+                        {hud.housing.cabinTitle} · Warm Hearth
+                      </div>
+                      <div className="text-xs font-bold tabular-nums text-[#fffbeb]">
+                        Tier {hud.housing.cabinTier}/5 · Safe Indoors
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="hidden 2xl:flex flex-col items-end px-2.5 py-1.5 rounded-lg hud-plaque">
+                    <div className="text-[10px] uppercase tracking-wider text-[#9db4cb]">
+                      {cabinSpec.name}
+                    </div>
+                    <div className="text-xs font-bold tabular-nums text-[#f6c344]">
+                      Tier {hud.levels.cabin}/5 · {hud.workerCount} Workers
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             <button
               type="button"
               tabIndex={-1}
-              aria-label="Open Camp Upgrades"
+              data-testid="top-menu-btn"
+              aria-label="Open Game Menu"
               onClick={(e) => {
                 e.currentTarget.blur();
                 onToggleDrawer();
               }}
-              className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg border flex items-center justify-center cursor-pointer transition-colors shadow-[0_4px_12px_rgba(8,14,24,0.45)] ${
-                drawerOpen
-                  ? 'bg-[#d98a2b] border-[#f7d88b] text-[#131d2b]'
-                  : 'bg-[#162336]/90 border-[#6e8eb0]/45 text-[#f4efe6] hover:bg-[#223652]'
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
+                drawerOpen ? 'hud-keycap-active' : 'hud-keycap text-[#f4efe6]'
               }`}
             >
-              <Hammer className="w-4 h-4" />
+              <Menu className="w-4 h-4" />
             </button>
 
             <button
@@ -1689,7 +2230,7 @@ export function GameHud({
                 e.currentTarget.blur();
                 onToggleMute();
               }}
-              className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#162336]/90 hover:bg-[#223652] border border-[#6e8eb0]/45 text-[#f4efe6] flex items-center justify-center cursor-pointer transition-colors shadow-[0_4px_12px_rgba(8,14,24,0.45)]"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg hud-keycap text-[#f4efe6] flex items-center justify-center cursor-pointer transition-colors"
             >
               {hud.muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
@@ -1697,12 +2238,13 @@ export function GameHud({
             <button
               type="button"
               tabIndex={-1}
+              data-testid="pause-button"
               aria-label="Pause Game"
               onClick={(e) => {
                 e.currentTarget.blur();
                 onPause();
               }}
-              className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#162336]/90 hover:bg-[#223652] border border-[#6e8eb0]/45 text-[#f4efe6] flex items-center justify-center cursor-pointer transition-colors shadow-[0_4px_12px_rgba(8,14,24,0.45)]"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg hud-keycap text-[#f4efe6] flex items-center justify-center cursor-pointer transition-colors"
             >
               <Pause className="w-4 h-4" />
             </button>
@@ -1710,155 +2252,179 @@ export function GameHud({
 
           {!drawerOpen && (
             <div className="flex flex-col items-end gap-1.5">
-              {/* 6-Zone Expedition Selector Bar (1x -> 3x -> 9x -> 27x -> 81x + City) */}
-              <div
-                data-testid="zone-travel-bar"
-                className="pointer-events-auto flex flex-wrap items-center justify-end gap-1 rounded-lg bg-[#121f31]/94 border border-[#6e8eb0]/45 px-1.5 py-1 shadow-[0_4px_14px_rgba(8,14,24,0.48)]"
-              >
-                {(
-                  [
-                    { id: 'level1' as ZoneId, label: 'L1 · 1x', title: 'Level 1: Frostwood Valley (1x Difficulty)' },
-                    { id: 'level2' as ZoneId, label: 'L2 · 3x', title: 'Level 2: Glacial Highlands (3x Difficulty)' },
-                    { id: 'level3' as ZoneId, label: 'L3 · 9x', title: 'Level 3: Rimefang Abyss (9x Difficulty)' },
-                    { id: 'level4' as ZoneId, label: 'L4 · 27x', title: 'Level 4: Obsidian Permafrost (27x Difficulty)' },
-                    { id: 'level5' as ZoneId, label: 'L5 · 81x', title: 'Level 5: Starfall Eternal Zero (81x Difficulty)' },
-                    { id: 'city' as ZoneId, label: 'City', title: 'Frostcave City: Cavern Sanctuary' },
-                  ]
-                ).map((item) => {
-                  const active = hud.zone.id === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      tabIndex={-1}
-                      data-testid={`zone-travel-${item.id}`}
-                      title={item.title}
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        if (!active) onSelectZone(item.id);
-                      }}
-                      className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-tight tabular-nums cursor-pointer transition-colors ${
-                        active
-                          ? item.id === 'city'
-                            ? 'bg-[#d98a2b] text-[#131d2b] border border-[#ffe394]'
-                            : 'bg-[#194766] text-[#e0faff] border border-[#7be0ff]'
-                          : 'bg-[#1a2b42]/85 hover:bg-[#243b59] text-[#b8cbe0] border border-[#6e8eb0]/35'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Zone-Specific Weather Status Effect & Infrastructure Mitigation Plaque */}
-              {(() => {
-                const zw = hud.zoneWeatherEffect;
-                const moveDeltaPct = Math.round((zw.effectiveMoveSpeedMult - 1) * 100);
-                const gatherDeltaPct = Math.round((zw.effectiveGatherEfficiencyMult - 1) * 100);
-                const moveStr =
-                  moveDeltaPct > 0
-                    ? `+${moveDeltaPct}% Move`
-                    : moveDeltaPct < 0
-                      ? `${moveDeltaPct}% Move`
-                      : '100% Move';
-                const gatherStr =
-                  gatherDeltaPct > 0
-                    ? `+${gatherDeltaPct}% Harvest`
-                    : gatherDeltaPct < 0
-                      ? `${gatherDeltaPct}% Harvest`
-                      : '100% Harvest';
-                const borderCls = zw.mitigated
-                  ? 'bg-[#122b36]/94 border-[#8ed49a]/65'
-                  : zw.severity === 'extreme' || zw.severity === 'severe'
-                    ? 'bg-[#2d141c]/95 border-[#f87171]/75'
-                    : 'bg-[#1e2638]/94 border-[#f6c344]/65';
-                return (
+              {!isMinimalHud && (
+                <>
+                  {/* 6-Zone Expedition Selector Bar (Classic HUD Mode Only) */}
                   <div
-                    data-testid="zone-weather-effect-status"
-                    data-effect-id={zw.id}
-                    data-severity={zw.severity}
-                    data-mitigated={zw.mitigated ? 'true' : 'false'}
-                    className={`pointer-events-auto w-60 sm:w-72 rounded-lg border px-2.5 py-1.5 shadow-[0_4px_14px_rgba(8,14,24,0.52)] ${borderCls}`}
+                    data-testid="zone-travel-bar"
+                    className="pointer-events-auto hidden sm:flex flex-wrap items-center justify-end gap-1 rounded-lg hud-plaque px-1.5 py-1"
                   >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-[10px] sm:text-[11px] font-bold text-[#f4efe6] truncate">
-                        {zw.name}
-                      </span>
-                      <span
-                        className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider shrink-0 ${
-                          zw.mitigated
-                            ? 'bg-[#163d2b] text-[#8ed49a] border border-[#8ed49a]/50'
-                            : zw.severity === 'extreme' || zw.severity === 'severe'
-                              ? 'bg-[#451218] text-[#fca5a5] border border-[#f87171]/60'
-                              : 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/55'
-                        }`}
-                      >
-                        {zw.mitigated ? 'Mitigated' : `${zw.severity} Hazard`}
-                      </span>
-                    </div>
-
-                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-bold tabular-nums">
-                      <span
-                        data-testid="zone-weather-move-impact"
-                        className={
-                          moveDeltaPct < 0
-                            ? 'text-[#fca5a5]'
-                            : moveDeltaPct > 0
-                              ? 'text-[#8ed49a]'
-                              : 'text-[#dce6f2]'
-                        }
-                      >
-                        {moveStr}
-                      </span>
-                      <span
-                        data-testid="zone-weather-gather-impact"
-                        className={
-                          gatherDeltaPct < 0
-                            ? 'text-[#fdba74]'
-                            : gatherDeltaPct > 0
-                              ? 'text-[#8ed49a]'
-                              : 'text-[#dce6f2]'
-                        }
-                      >
-                        {gatherStr}
-                      </span>
-                      <span className="text-[9px] text-[#9db4cb]">
-                        W:{zw.windResistancePct}/{zw.requiredWindResistancePct}% · H:{zw.heatRetentionPct}/{zw.requiredHeatRetentionPct}%
-                      </span>
-                    </div>
-
-                    {!zw.mitigated && (
-                      <div className="mt-1 flex items-center justify-between gap-1.5 pt-1 border-t border-[#6e8eb0]/25">
-                        <span className="text-[9px] text-[#cbd5e1] truncate">
-                          {zw.infrastructureHint}
-                        </span>
+                    {(
+                      [
+                        { id: 'level1' as ZoneId, label: 'L1 · 1x', title: 'Level 1: Frostwood Valley (1x Difficulty)' },
+                        { id: 'level2' as ZoneId, label: 'L2 · 3x', title: 'Level 2: Glacial Highlands (3x Difficulty)' },
+                        { id: 'level3' as ZoneId, label: 'L3 · 9x', title: 'Level 3: Rimefang Abyss (9x Difficulty)' },
+                        { id: 'level4' as ZoneId, label: 'L4 · 27x', title: 'Level 4: Obsidian Permafrost (27x Difficulty)' },
+                        { id: 'level5' as ZoneId, label: 'L5 · 81x', title: 'Level 5: Starfall Eternal Zero (81x Difficulty)' },
+                        { id: 'city' as ZoneId, label: 'City', title: 'Frostcave City: Cavern Sanctuary' },
+                      ]
+                    ).map((item) => {
+                      const active = hud.zone.id === item.id;
+                      return (
                         <button
+                          key={item.id}
                           type="button"
                           tabIndex={-1}
-                          data-testid="zone-weather-build-infra-btn"
+                          data-testid={`zone-travel-${item.id}`}
+                          title={item.title}
                           onClick={(e) => {
                             e.currentTarget.blur();
-                            onOpenTab('camp');
+                            if (!active) onSelectZone(item.id);
                           }}
-                          className="px-1.5 py-0.5 rounded bg-[#d98a2b] hover:bg-[#ea9c3b] text-[#131d2b] text-[9px] font-extrabold uppercase tracking-wider shrink-0 cursor-pointer"
+                          className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-tight tabular-nums cursor-pointer transition-colors ${
+                            active
+                              ? item.id === 'city'
+                                ? 'hud-keycap-active'
+                                : 'bg-gradient-to-b from-[#1f5c82] to-[#133b56] text-[#e0faff] border border-[#7be0ff]'
+                              : 'hud-keycap text-[#b8cbe0]'
+                          }`}
                         >
-                          Build [U]
+                          {item.label}
                         </button>
-                      </div>
-                    )}
+                      );
+                    })}
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-testid="zone-travel-lake"
+                      title="Teleport to Crystal Lagoon Fishing Pier (Level 1)"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        onTravelToFishingLake();
+                      }}
+                      className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-tight tabular-nums cursor-pointer transition-colors inline-flex items-center gap-1 ${
+                        hud.fishing.nearLake
+                          ? 'bg-gradient-to-b from-[#0ea5e9] to-[#0369a1] text-[#f0f9ff] border border-[#7dd3fc]'
+                          : 'bg-gradient-to-b from-[#133b56] to-[#0c2638] text-[#7be0ff] border border-[#38bdf8]/65 hover:brightness-110'
+                      }`}
+                    >
+                      <Fish className="w-2.5 h-2.5" />
+                      <span>Lake</span>
+                    </button>
                   </div>
-                );
-              })()}
 
-              <MinimapOverlay
-                zone={hud.zone}
-                wildlifeBlips={hud.wildlifeBlips}
-                hunterBlips={hud.hunterBlips}
-                chestBlips={hud.chestBlips}
-                bossBlip={hud.bossBlip}
-                sightActive={hud.huntersSight.active}
-              />
+                  {/* Zone-Specific Weather Status Effect Plaque (Classic HUD Mode Only) */}
+                  {(() => {
+                    const zw = hud.zoneWeatherEffect;
+                    const moveDeltaPct = Math.round((zw.effectiveMoveSpeedMult - 1) * 100);
+                    const gatherDeltaPct = Math.round((zw.effectiveGatherEfficiencyMult - 1) * 100);
+                    const moveStr =
+                      moveDeltaPct > 0
+                        ? `+${moveDeltaPct}% Move`
+                        : moveDeltaPct < 0
+                          ? `${moveDeltaPct}% Move`
+                          : '100% Move';
+                    const gatherStr =
+                      gatherDeltaPct > 0
+                        ? `+${gatherDeltaPct}% Harvest`
+                        : gatherDeltaPct < 0
+                          ? `${gatherDeltaPct}% Harvest`
+                          : '100% Harvest';
+                    const borderCls = zw.mitigated
+                      ? 'hud-plaque-frost border-l-[3px] border-l-[#8ed49a]'
+                      : zw.severity === 'extreme' || zw.severity === 'severe'
+                        ? 'hud-plaque-crimson border-l-[3px] border-l-[#f87171]'
+                        : 'hud-plaque-gold border-l-[3px] border-l-[#f6c344]';
+                    return (
+                      <div
+                        data-testid="zone-weather-effect-status"
+                        data-effect-id={zw.id}
+                        data-severity={zw.severity}
+                        data-mitigated={zw.mitigated ? 'true' : 'false'}
+                        className={`pointer-events-auto hidden sm:block w-60 sm:w-72 rounded-lg px-2.5 py-1.5 ${borderCls}`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-[10px] sm:text-[11px] font-bold text-[#f4efe6] truncate">
+                            {zw.name}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase tracking-wider shrink-0 ${
+                              zw.mitigated
+                                ? 'bg-[#163d2b] text-[#8ed49a] border border-[#8ed49a]/50'
+                                : zw.severity === 'extreme' || zw.severity === 'severe'
+                                  ? 'bg-[#451218] text-[#fca5a5] border border-[#f87171]/60'
+                                  : 'bg-[#3b2a14] text-[#fde047] border border-[#f6c344]/55'
+                            }`}
+                          >
+                            {zw.mitigated ? 'Mitigated' : `${zw.severity} Hazard`}
+                          </span>
+                        </div>
+
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-bold tabular-nums">
+                          <span
+                            data-testid="zone-weather-move-impact"
+                            className={
+                              moveDeltaPct < 0
+                                ? 'text-[#fca5a5]'
+                                : moveDeltaPct > 0
+                                  ? 'text-[#8ed49a]'
+                                  : 'text-[#dce6f2]'
+                            }
+                          >
+                            {moveStr}
+                          </span>
+                          <span
+                            data-testid="zone-weather-gather-impact"
+                            className={
+                              gatherDeltaPct < 0
+                                ? 'text-[#fdba74]'
+                                : gatherDeltaPct > 0
+                                  ? 'text-[#8ed49a]'
+                                  : 'text-[#dce6f2]'
+                            }
+                          >
+                            {gatherStr}
+                          </span>
+                          <span className="text-[9px] text-[#9db4cb]">
+                            W:{zw.windResistancePct}/{zw.requiredWindResistancePct}% · H:{zw.heatRetentionPct}/{zw.requiredHeatRetentionPct}%
+                          </span>
+                        </div>
+
+                        {!zw.mitigated && (
+                          <div className="mt-1 flex items-center justify-between gap-1.5 pt-1 border-t border-[#6e8eb0]/25">
+                            <span className="text-[9px] text-[#cbd5e1] truncate">
+                              {zw.infrastructureHint}
+                            </span>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              data-testid="zone-weather-build-infra-btn"
+                              onClick={(e) => {
+                                e.currentTarget.blur();
+                                onOpenTab('camp');
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-[#d98a2b] hover:bg-[#ea9c3b] text-[#131d2b] text-[9px] font-extrabold uppercase tracking-wider shrink-0 cursor-pointer"
+                            >
+                              Build [U]
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
+              {hud.settings.showMinimap && (
+                <MinimapOverlay
+                  zone={hud.zone}
+                  wildlifeBlips={hud.wildlifeBlips}
+                  hunterBlips={hud.hunterBlips}
+                  chestBlips={hud.chestBlips}
+                  bossBlip={hud.bossBlip}
+                  sightActive={hud.huntersSight.active}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1870,16 +2436,16 @@ export function GameHud({
           data-testid="zone-boss-hud"
           data-boss-id={hud.bossNear.id}
           data-phase={hud.bossNear.phase}
-          className={`pointer-events-none mx-auto mt-1.5 w-full max-w-[356px] lg:fixed lg:top-[68px] lg:left-1/2 lg:-translate-x-1/2 lg:mt-0 lg:w-[360px] rounded-xl px-2.5 sm:px-3 py-1 sm:py-1.5 border shadow-[0_10px_24px_rgba(8,12,20,0.68)] ${
+          className={`pointer-events-none mx-auto mt-1.5 w-full max-w-[460px] lg:fixed lg:top-[68px] lg:left-1/2 lg:-translate-x-1/2 lg:mt-0 lg:w-[610px] rounded-xl px-2.5 sm:px-3 py-1 sm:py-1.5 border-l-[3px] ${
             hud.bossNear.state === 'ko'
-              ? 'bg-[#161c26]/94 border-[#64748b]/70'
+              ? 'hud-plaque border-l-[#64748b]'
               : hud.bossNear.enraged
-                ? 'bg-[#2a0f14]/95 border-[#ef4444]/90'
+                ? 'hud-plaque-crimson border-l-[#ef4444]'
                 : hud.bossNear.zone === 'level2'
-                  ? 'bg-[#0e263a]/95 border-[#38bdf8]/85'
+                  ? 'hud-plaque-frost border-l-[#38bdf8]'
                   : hud.bossNear.zone === 'city'
-                    ? 'bg-[#261614]/95 border-[#f97316]/85'
-                    : 'bg-[#221d16]/95 border-[#f59e0b]/85'
+                    ? 'hud-plaque-gold border-l-[#f97316]'
+                    : 'hud-plaque-gold border-l-[#f59e0b]'
           }`}
         >
           <div className="flex items-center justify-between gap-2 min-w-0">
@@ -1938,16 +2504,28 @@ export function GameHud({
             </div>
           </div>
 
-          <div className="mt-1 h-2 rounded-sm bg-[#0b1018] overflow-hidden border border-[#475569]/75">
+          <div className="hud-meter-track mt-1 h-2.5 rounded-sm overflow-hidden">
             <div
-              className={`h-full transition-[width] duration-150 ${
+              className="absolute inset-y-0 left-0 bg-[#fef3c7]/55 transition-[width] duration-700 ease-out pointer-events-none"
+              style={{
+                width: `${Math.max(
+                  0,
+                  Math.min(
+                    100,
+                    (hud.bossNear.hp / Math.max(1, hud.bossNear.maxHp)) * 100,
+                  ),
+                )}%`,
+              }}
+            />
+            <div
+              className={`relative z-[1] h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-[width] duration-150 ${
                 hud.bossNear.state === 'ko'
                   ? 'bg-[#64748b]'
                   : hud.bossNear.enraged
-                    ? 'bg-[#ef4444]'
+                    ? 'bg-gradient-to-b from-[#f87171] to-[#b91c1c]'
                     : hud.bossNear.zone === 'level2'
-                      ? 'bg-[#38bdf8]'
-                      : 'bg-[#f59e0b]'
+                      ? 'bg-gradient-to-b from-[#7dd3fc] to-[#0284c7]'
+                      : 'bg-gradient-to-b from-[#fbbf24] to-[#b45309]'
               }`}
               style={{
                 width: `${Math.max(
@@ -1959,6 +2537,7 @@ export function GameHud({
                 )}%`,
               }}
             />
+            <div className="hud-meter-ticks absolute inset-0 z-[2] pointer-events-none" />
           </div>
 
           {hud.bossNear.telegraphLabel && (
@@ -1985,9 +2564,36 @@ export function GameHud({
       </div>
 
       {/* Transient Context / Toast Notice & Portal / Trader / Track Trigger */}
-      <div className="flex flex-col items-center gap-2">
-        {!drawerOpen && (hud.toastText || hud.contextHint) && (
-          <div className="px-3.5 sm:px-4 py-1.5 rounded-lg bg-[#121f31]/94 border border-[#f6c344]/55 text-[11px] sm:text-sm font-semibold text-[#f4efe6] text-center max-w-[92vw] sm:max-w-[680px] shadow-[0_4px_14px_rgba(8,14,24,0.5)]">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-end gap-2 mt-2">
+        {!drawerOpen && hud.activeTool === 'bow' && hud.bowLockedTarget && (
+          <div
+            data-testid="bow-locked-target-badge"
+            className="hud-plaque px-3 py-1 rounded-lg border border-[#f59e0b]/75 bg-[#152236]/95 flex items-center gap-2.5 text-[11px] font-bold text-[#fde68a] shadow-[0_6px_16px_rgba(8,14,24,0.65)]"
+          >
+            <Crosshair className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
+            <span className="truncate max-w-[160px] sm:max-w-[240px]">
+              {hud.bowLockedTarget.label}
+            </span>
+            <span className="text-[#93c5fd] tabular-nums">
+              {hud.bowLockedTarget.distance.toFixed(1)}m
+            </span>
+            <span className="text-[#fca5a5] tabular-nums">
+              {Math.ceil(hud.bowLockedTarget.hp)}/{Math.ceil(hud.bowLockedTarget.maxHp)} HP
+            </span>
+            {hud.bowAutoAttack && (
+              <span className="px-1.5 py-0.5 rounded bg-[#92400e]/85 border border-[#fbbf24]/60 text-[9px] uppercase tracking-wider text-[#fef3c7]">
+                Auto-Fire
+              </span>
+            )}
+          </div>
+        )}
+        {!drawerOpen &&
+          (hud.toastText || hud.contextHint) &&
+          !(
+            !hud.housing.inCabin &&
+            (hud.fishing.nearLake || hud.activeTool === 'rod' || hud.fishing.phase !== 'idle')
+          ) && (
+          <div className="hud-plaque-gold px-3.5 sm:px-4 py-1.5 rounded-lg text-[11px] sm:text-sm font-semibold text-[#f4efe6] text-center max-w-[92vw] sm:max-w-[680px]">
             {hud.toastText ?? hud.contextHint}
           </div>
         )}
@@ -2001,12 +2607,12 @@ export function GameHud({
               e.currentTarget.blur();
               onUsePortal();
             }}
-            className={`pointer-events-auto px-4 py-2 rounded-lg border text-xs sm:text-sm font-bold tracking-wide cursor-pointer transition-colors shadow-[0_6px_18px_rgba(8,14,24,0.6)] ${
+            className={`pointer-events-auto px-4 py-2 rounded-lg text-xs sm:text-sm font-bold tracking-wide cursor-pointer transition-colors ${
               hud.zone.nearCityPortal
-                ? 'bg-[#362814]/95 hover:bg-[#4b381d] border-[#f6c344]/85 text-[#ffe8a3]'
+                ? 'hud-plaque-gold hover:brightness-110 text-[#ffe8a3]'
                 : hud.zone.nearForwardPortal || hud.zone.id === 'level1'
-                  ? 'bg-[#11334a]/95 hover:bg-[#194766] border-[#7be0ff]/80 text-[#c9f4ff]'
-                  : 'bg-[#362814]/95 hover:bg-[#4b381d] border-[#f6c344]/80 text-[#ffe8a3]'
+                  ? 'hud-plaque-frost hover:brightness-110 text-[#c9f4ff]'
+                  : 'hud-plaque-gold hover:brightness-110 text-[#ffe8a3]'
             }`}
           >
             {hud.zone.nearCityPortal
@@ -2154,10 +2760,70 @@ export function GameHud({
             </button>
           )}
         {!drawerOpen &&
+          !hud.housing.inCabin &&
+          !hud.zone.nearPortal &&
+          !hud.zone.nearForwardPortal &&
+          !hud.zone.nearCityPortal &&
+          !hud.secretChestNear &&
+          !hud.nearbyTrack &&
+          hud.housing.nearCabinDoor && (
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="enter-cabin-button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onEnterCabin();
+              }}
+              className="pointer-events-auto px-4 py-2 rounded-lg border border-[#fbbf24]/90 bg-[#32210e]/95 hover:bg-[#493014] text-xs sm:text-sm font-bold tracking-wide text-[#fef3c7] cursor-pointer transition-colors shadow-[0_6px_18px_rgba(24,14,4,0.68)] inline-flex items-center gap-2"
+            >
+              <Home className="w-4 h-4 text-[#fbbf24]" />
+              Enter {hud.housing.cabinTitle} · Sleep &amp; Hearth [E]
+            </button>
+          )}
+        {!drawerOpen &&
+          hud.housing.inCabin &&
+          !hud.housing.isSleeping &&
+          hud.housing.nearBed && (
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="sleep-bed-button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onSleepInCabin();
+              }}
+              className="pointer-events-auto px-4 py-2 rounded-lg border border-[#fbbf24]/95 bg-[#33220f]/95 hover:bg-[#4a3216] text-xs sm:text-sm font-bold tracking-wide text-[#fef08a] cursor-pointer transition-colors shadow-[0_6px_18px_rgba(24,14,4,0.72)] inline-flex items-center gap-2"
+            >
+              <BedDouble className="w-4 h-4 text-[#fbbf24]" />
+              Sleep in {hud.housing.bedName} · Skip to Day {hud.dayNight.dayNumber + 1} [E]
+            </button>
+          )}
+        {!drawerOpen &&
+          hud.housing.inCabin &&
+          !hud.housing.isSleeping &&
+          hud.housing.nearInteriorDoor &&
+          !hud.housing.nearBed && (
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="exit-cabin-button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onExitCabin();
+              }}
+              className="pointer-events-auto px-4 py-2 rounded-lg border border-[#7be0ff]/85 bg-[#123249]/95 hover:bg-[#1a4869] text-xs sm:text-sm font-bold tracking-wide text-[#d4f6ff] cursor-pointer transition-colors shadow-[0_6px_18px_rgba(8,14,24,0.68)] inline-flex items-center gap-2"
+            >
+              <DoorOpen className="w-4 h-4 text-[#7be0ff]" />
+              Exit {hud.housing.cabinTitle} Outside [E]
+            </button>
+          )}
+        {!drawerOpen &&
           !hud.zone.nearPortal &&
           !hud.zone.nearCityPortal &&
           !hud.secretChestNear &&
           !hud.nearbyTrack &&
+          !hud.housing.nearCabinDoor &&
           hud.nearCraftingStation && (
             <button
               type="button"
@@ -2174,146 +2840,375 @@ export function GameHud({
             </button>
           )}
 
-        {/* Collapsible Tycoon Upgrade, Crafting & Trade Drawer */}
+        {/* Crystal Lagoon · Fishing & Hooking HUD Panel */}
+        {!drawerOpen &&
+          !hud.housing.inCabin &&
+          (hud.fishing.nearLake || hud.activeTool === 'rod' || hud.fishing.phase !== 'idle') && (
+            <div
+              data-testid="fishing-hud-panel"
+              data-fishing-phase={hud.fishing.phase}
+              className="pointer-events-auto w-full max-w-[530px] rounded-xl hud-plaque-frost border-2 border-[#38bdf8]/80 bg-[#0c1d2e]/95 px-3 py-1.5 shadow-[0_10px_28px_rgba(4,12,24,0.82)] flex flex-col gap-1.5"
+            >
+              {/* Header: Sanctuary Title, Total Caught & Ice Thickness Badge */}
+              <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-[#38bdf8]/25 pb-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Fish className="w-4 h-4 text-[#38bdf8] shrink-0" />
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#e0f2fe]">
+                    Crystal Lagoon Fishing
+                  </span>
+                  <span
+                    data-testid="fishing-phase-badge"
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider ${
+                      hud.fishing.phase === 'bite'
+                        ? 'bg-[#f59e0b] text-[#111827] animate-pulse'
+                        : hud.fishing.phase === 'hooking'
+                          ? 'bg-[#0284c7] text-[#e0f2fe] border border-[#7dd3fc]'
+                          : hud.fishing.phase === 'caught'
+                            ? 'bg-[#059669] text-[#ecfdf5]'
+                            : 'bg-[#152c44] text-[#93c5fd] border border-[#38bdf8]/40'
+                    }`}
+                  >
+                    {hud.fishing.phase === 'idle'
+                      ? hud.fishing.nearLake
+                        ? 'Shore Ready'
+                        : `${hud.fishing.distanceToLake}m ${hud.fishing.directionToLake}`
+                      : hud.fishing.phase}
+                  </span>
+                  {hud.fishing.inSafeZone && (
+                    <span
+                      data-testid="fishing-safe-zone-badge"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#064e3b] border border-[#34d399]/70 text-[9px] font-extrabold uppercase tracking-wider text-[#a7f3d0]"
+                    >
+                      <Shield className="w-2.5 h-2.5 text-[#34d399]" />
+                      Safe Sanctuary · No Hostiles
+                    </span>
+                  )}
+                  {hud.fishing.isSwimming && (
+                    <span
+                      data-testid="fishing-swimming-badge"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#0284c7] border border-[#7dd3fc] text-[9px] font-extrabold uppercase tracking-wider text-[#f0f9ff]"
+                    >
+                      Swimming in Lagoon
+                    </span>
+                  )}
+                  <span
+                    data-testid="fishing-ice-thickness-badge"
+                    title={hud.fishing.iceThicknessLabel}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-extrabold uppercase tracking-wider tabular-nums ${
+                      hud.fishing.iceThicknessStage === 'thick_glacial'
+                        ? 'bg-[#0c4a6e] border-[#7dd3fc] text-[#e0f2fe]'
+                        : hud.fishing.iceThicknessStage === 'frosted_firm'
+                          ? 'bg-[#164e63] border-[#67e8f9] text-[#cffafe]'
+                          : hud.fishing.iceThicknessStage === 'cracked_thin'
+                            ? 'bg-[#451a03] border-[#fbbf24]/80 text-[#fef3c7]'
+                            : 'bg-[#082f49] border-[#38bdf8]/60 text-[#bae6fd]'
+                    }`}
+                  >
+                    Ice: {hud.fishing.iceThicknessCm}cm ·{' '}
+                    {hud.fishing.iceThicknessStage === 'thick_glacial'
+                      ? 'Solid Glacial'
+                      : hud.fishing.iceThicknessStage === 'frosted_firm'
+                        ? 'Firm Frosted'
+                        : hud.fishing.iceThicknessStage === 'cracked_thin'
+                          ? 'Cracked Thin'
+                          : 'Thin Rim'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[10px] font-bold tabular-nums">
+                  <span
+                    data-testid="fishing-total-caught"
+                    className="px-1.5 py-0.5 rounded bg-[#10253a] border border-[#38bdf8]/35 text-[#bae6fd]"
+                  >
+                    Caught: {hud.fishing.totalCaught}
+                  </span>
+                  {!hud.fishing.nearLake && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-testid="fishing-panel-travel-btn"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        onTravelToFishingLake();
+                      }}
+                      className="px-2 py-0.5 rounded bg-gradient-to-b from-[#0284c7] to-[#0369a1] hover:brightness-110 border border-[#7dd3fc] text-[#f0f9ff] cursor-pointer"
+                    >
+                      Go to Pier
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Nearby Fish Rarity Distribution Strip (shown while actively fishing) */}
+              {hud.fishing.phase !== 'idle' && (
+                <div className="flex flex-wrap items-center justify-between gap-1 text-[10px]">
+                  <span className="font-semibold uppercase tracking-wider text-[#9db4cb]">
+                    Lagoon School Rarities:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(['common', 'uncommon', 'rare', 'epic', 'mythic'] as ItemRarity[]).map((r) => {
+                      const present = hud.fishing.nearbyFishRarities.includes(r);
+                      return (
+                        <span
+                          key={r}
+                          className={`px-1.5 py-0.2 rounded border text-[9px] font-bold uppercase tracking-wider ${
+                            present ? rarityBadgeStyle(r) : 'bg-[#101c2b] border-[#334155]/40 text-[#64748b]'
+                          }`}
+                        >
+                          {r}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Phase Content: Hooking Tension Mini-Game vs Bite Alert vs Cast Controls */}
+              {hud.fishing.phase === 'hooking' && hud.fishing.targetFishName && hud.fishing.targetFishRarity ? (
+                <div
+                  data-testid="fishing-hooking-minigame"
+                  className="flex flex-col gap-2 rounded-lg bg-[#081523] border border-[#38bdf8]/50 p-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        data-testid="hooked-fish-rarity"
+                        className={`px-1.5 py-0.5 rounded border text-[9px] font-extrabold uppercase tracking-wider shrink-0 ${rarityBadgeStyle(
+                          hud.fishing.targetFishRarity,
+                        )}`}
+                      >
+                        {hud.fishing.targetFishRarity}
+                      </span>
+                      <span
+                        data-testid="hooked-fish-name"
+                        className="text-xs font-extrabold text-[#f8fafc] truncate"
+                      >
+                        {hud.fishing.targetFishName} ({hud.fishing.targetFishWeightKg} kg)
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold tabular-nums text-[#fde68a] shrink-0">
+                      {hud.fishing.isInSweetSpot ? 'REELING IN!' : 'Align Sweet-Spot!'}
+                    </span>
+                  </div>
+
+                  {/* Interactive Hooking Sweet-Spot & Fish Marker Track */}
+                  <div
+                    data-testid="fishing-tension-bar"
+                    className="relative h-6 w-full rounded-md bg-[#050d17] border border-[#475569] overflow-hidden select-none"
+                  >
+                    {/* Sweet-Spot Capture Window */}
+                    <div
+                      data-testid="fishing-sweet-spot"
+                      className="absolute top-0 bottom-0 bg-gradient-to-r from-[#10b981]/55 via-[#38bdf8]/65 to-[#10b981]/55 border-x-2 border-[#6ee7b7] transition-[left] duration-75"
+                      style={{
+                        left: `${Math.max(
+                          0,
+                          Math.min(
+                            100 - hud.fishing.sweetSpotWidth,
+                            hud.fishing.hookBarPos - hud.fishing.sweetSpotWidth / 2,
+                          ),
+                        )}%`,
+                        width: `${hud.fishing.sweetSpotWidth}%`,
+                      }}
+                    />
+
+                    {/* Hooked Fish Position Marker */}
+                    <div
+                      data-testid="fishing-fish-marker"
+                      className="absolute top-0.5 bottom-0.5 w-5 -ml-2.5 rounded bg-[#f59e0b] border border-[#fef08a] shadow-[0_0_10px_rgba(251,191,36,0.9)] flex items-center justify-center transition-[left] duration-75"
+                      style={{
+                        left: `${Math.max(3, Math.min(97, hud.fishing.fishBarPos))}%`,
+                      }}
+                    >
+                      <Fish className="w-3 h-3 text-[#0f172a]" />
+                    </div>
+                  </div>
+
+                  {/* Dual Meters: Catch Progress & Line Tension */}
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-bold tabular-nums">
+                    <div>
+                      <div className="flex justify-between text-[#a7f3d0] mb-0.5">
+                        <span>HOOK PROGRESS</span>
+                        <span data-testid="fishing-catch-progress">
+                          {Math.round(hud.fishing.catchProgress)}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-sm bg-[#0f172a] overflow-hidden border border-[#10b981]/40">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#10b981] to-[#38bdf8] transition-[width] duration-75"
+                          style={{
+                            width: `${Math.max(0, Math.min(100, hud.fishing.catchProgress))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[#fde68a] mb-0.5">
+                        <span>LINE TENSION</span>
+                        <span data-testid="fishing-line-tension">
+                          {Math.round(hud.fishing.lineTension)}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-sm bg-[#0f172a] overflow-hidden border border-[#f59e0b]/40">
+                        <div
+                          className={`h-full transition-[width] duration-75 ${
+                            hud.fishing.lineTension > 75
+                              ? 'bg-gradient-to-r from-[#f97316] to-[#ef4444]'
+                              : 'bg-gradient-to-r from-[#38bdf8] to-[#fbbf24]'
+                          }`}
+                          style={{
+                            width: `${Math.max(0, Math.min(100, hud.fishing.lineTension))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hold-to-Reel Interactive Button */}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="fishing-reel-button"
+                    onPointerDown={() => onSetFishingReel(true)}
+                    onPointerUp={() => onSetFishingReel(false)}
+                    onPointerLeave={() => onSetFishingReel(false)}
+                    onPointerCancel={() => onSetFishingReel(false)}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      onCastOrHookFish();
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg bg-gradient-to-b from-[#0ea5e9] to-[#0284c7] active:from-[#38bdf8] active:to-[#0ea5e9] border border-[#bae6fd] text-xs font-extrabold uppercase tracking-wider text-[#f8fafc] cursor-pointer select-none shadow-[0_4px_12px_rgba(2,132,199,0.5)]"
+                  >
+                    Hold to Reel Line Right [Hold Space / Mouse / E]
+                  </button>
+                </div>
+              ) : hud.fishing.phase === 'bite' ? (
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="fishing-hook-button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      onCastOrHookFish();
+                    }}
+                    className="w-full py-2 px-4 rounded-lg bg-gradient-to-b from-[#fbbf24] to-[#d97706] hover:brightness-110 border-2 border-[#fef08a] text-xs sm:text-sm font-extrabold uppercase tracking-wider text-[#111827] cursor-pointer shadow-[0_0_20px_rgba(251,191,36,0.65)] flex items-center justify-center gap-2"
+                  >
+                    <Fish className="w-4 h-4 text-[#111827]" />
+                    <span>
+                      BITE ALERT! Strike &amp; Hook {(hud.fishing.targetFishRarity ?? 'rare').toUpperCase()} Fish [E / Space]
+                    </span>
+                  </button>
+                </div>
+              ) : hud.fishing.phase === 'casting' || hud.fishing.phase === 'waiting' ? (
+                <div className="flex items-center justify-between gap-2 bg-[#091828] border border-[#38bdf8]/35 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#38bdf8] animate-ping shrink-0" />
+                    <span className="text-xs font-semibold text-[#e0f2fe] truncate">
+                      {hud.fishing.phase === 'casting'
+                        ? 'Casting Glacial Line into Crystal Lagoon...'
+                        : 'Bobber floating on the water ripples... wait for a bite!'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    data-testid="fishing-cancel-button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      onCastOrHookFish();
+                    }}
+                    className="px-2.5 py-1 rounded bg-[#1e293b] hover:bg-[#334155] border border-[#64748b]/60 text-[11px] font-bold text-[#e2e8f0] shrink-0 cursor-pointer"
+                  >
+                    Reel In [E]
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {hud.fishing.lastCatch && (
+                    <div
+                      data-testid="fishing-last-catch"
+                      className="flex items-center justify-between gap-2 px-2.5 py-1 rounded bg-[#091828] border border-[#38bdf8]/35 text-[11px]"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[#9db4cb] font-semibold shrink-0">Last Catch:</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded border text-[9px] font-bold uppercase shrink-0 ${rarityBadgeStyle(
+                            hud.fishing.lastCatch.rarity,
+                          )}`}
+                        >
+                          {hud.fishing.lastCatch.rarity}
+                        </span>
+                        <span className="font-bold text-[#f0f9ff] truncate">
+                          {hud.fishing.lastCatch.name} ({hud.fishing.lastCatch.weightKg} kg)
+                        </span>
+                      </div>
+                      <span className="font-bold text-[#fde68a] tabular-nums shrink-0">
+                        +{hud.fishing.lastCatch.gold}g · +{hud.fishing.lastCatch.meat} Meat · +{hud.fishing.lastCatch.ice} Ice
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#bae6fd] truncate">
+                      {hud.fishing.nearLake
+                        ? 'Crystal Lagoon Pier — Cast line for Common to Mythic fish!'
+                        : `Crystal Lagoon is ${hud.fishing.distanceToLake}m ${hud.fishing.directionToLake} of you`}
+                    </span>
+                    {hud.fishing.nearLake ? (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        data-testid="fishing-cast-button"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          onCastOrHookFish();
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-[#0ea5e9] to-[#0369a1] hover:brightness-110 border border-[#7dd3fc] text-xs font-extrabold uppercase tracking-wider text-[#f0f9ff] shrink-0 cursor-pointer inline-flex items-center gap-1.5 shadow-[0_4px_14px_rgba(2,132,199,0.45)]"
+                      >
+                        <Fish className="w-3.5 h-3.5" />
+                        <span>Cast Line [E]</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        data-testid="fishing-cast-button"
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          onTravelToFishingLake();
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-[#0284c7] to-[#0369a1] hover:brightness-110 border border-[#7dd3fc] text-xs font-extrabold uppercase tracking-wider text-[#f0f9ff] shrink-0 cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <Fish className="w-3.5 h-3.5" />
+                        <span>Teleport to Lake</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+        {/* Unified Single Command Menu Hub */}
         {drawerOpen && (
           <div
             data-testid="upgrade-craft-drawer"
-            className="pointer-events-auto w-full max-w-[1120px] max-h-[calc(100dvh-205px)] sm:max-h-[calc(100dvh-225px)] min-h-[220px] overflow-y-auto overscroll-contain rounded-xl bg-[#121f31]/96 border-2 border-[#7fa4c8]/50 p-3 shadow-[0_14px_34px_rgba(8,14,24,0.78)]"
+            className="pointer-events-auto w-full max-w-[1120px] min-h-0 max-h-[min(84vh,610px)] flex flex-col rounded-2xl bg-[#0f1b2c]/96 border border-[#7fa4c8]/45 shadow-[0_20px_48px_rgba(6,10,18,0.85)] overflow-hidden"
           >
-            <div className="sticky top-0 z-20 -mx-3 -mt-3 px-3 pt-2.5 pb-2 mb-2.5 bg-[#121f31] border-b border-[#6e8eb0]/35 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
-              <div className="flex flex-nowrap sm:flex-wrap items-center gap-1 overflow-x-auto sm:overflow-visible overscroll-x-contain touch-pan-x pb-0.5">
-                <button
-                  type="button"
-                  onClick={() => onChangeDrawerTab('camp')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                    drawerTab === 'camp'
-                      ? 'bg-[#d98a2b] text-[#131d2b]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  Camp Base
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-craft"
-                  onClick={() => onChangeDrawerTab('craft')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'craft'
-                      ? 'bg-[#d98a2b] text-[#131d2b]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <Wrench className="w-3 h-3" />
-                  Station &amp; Gear [C]
-                  <span className="px-1 py-0.2 rounded bg-[#132032]/75 text-[#f6c344] text-[10px] font-extrabold">
-                    T{hud.gearBonuses.setTier}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-inventory"
-                  onClick={() => onChangeDrawerTab('inventory')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'inventory'
-                      ? 'bg-[#8ed49a] text-[#0f1d17]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <Backpack className="w-3 h-3" />
-                  Backpack [I]
-                  <span className="px-1 py-0.2 rounded bg-[#132032]/75 text-[#8ed49a] text-[10px] font-extrabold">
-                    {hud.backpackUsedSlots}/{hud.backpackMaxItems}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-city"
-                  onClick={() => onChangeDrawerTab('city')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'city'
-                      ? 'bg-[#f6c344] text-[#131d2b]'
-                      : 'bg-[#2c2214] border border-[#f6c344]/55 text-[#fde68a] hover:bg-[#3d2f1b]'
-                  }`}
-                >
-                  <Store className="w-3 h-3" />
-                  City [T]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeDrawerTab('festival')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 ${
-                    drawerTab === 'festival'
-                      ? 'bg-[#7be0ff] text-[#102030]'
-                      : hud.seasonalEvent.active
-                        ? 'bg-[#1d3c59] border border-[#7be0ff]/60 text-[#bceeff] hover:bg-[#274e72]'
-                        : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <Sparkles className="w-3 h-3" />
-                  Festival [F]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeDrawerTab('bestiary')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'bestiary'
-                      ? 'bg-[#d98a2b] text-[#131d2b]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <BookOpen className="w-3 h-3" />
-                  Bestiary {discoveredCount}/{totalSpeciesCount}
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-pets"
-                  onClick={() => onChangeDrawerTab('pets')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'pets'
-                      ? 'bg-[#f472b6] text-[#240b18]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <PawPrint className="w-3 h-3" />
-                  Pets [J]
-                  <span className="px-1 py-0.2 rounded bg-[#132032]/75 text-[#fbcfe8] text-[10px] font-extrabold">
-                    {hud.pets.tamedPets.length}/{hud.pets.maxSlots}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-achievements"
-                  onClick={() => onChangeDrawerTab('achievements')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'achievements'
-                      ? 'bg-[#f6c344] text-[#131d2b]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <Trophy className="w-3 h-3" />
-                  Badges [L]
-                  <span className="px-1 py-0.2 rounded bg-[#132032]/75 text-[#fde68a] text-[10px] font-extrabold">
-                    {hud.achievementsUnlockedCount}/{hud.achievements.length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="drawer-tab-skills"
-                  onClick={() => onChangeDrawerTab('skills')}
-                  className={`shrink-0 px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center gap-1 tabular-nums ${
-                    drawerTab === 'skills'
-                      ? 'bg-[#8ed49a] text-[#0f1d17]'
-                      : 'bg-[#22354f] text-[#c7d6e6] hover:bg-[#2d4464]'
-                  }`}
-                >
-                  <Award className="w-3 h-3" />
-                  Skills [K]
-                  {totalSkillPoints > 0 && (
-                    <span className="px-1.5 py-0.2 rounded bg-[#13241c] text-[#8ed49a] text-[10px] font-extrabold">
-                      +{totalSkillPoints}
-                    </span>
-                  )}
-                </button>
+            {/* Unified Menu Header Bar */}
+            <div className="px-4 py-3 bg-[#132236] border-b border-[#6e8eb0]/30 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Menu className="w-4 h-4 text-[#f6c344] shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-display font-extrabold text-sm uppercase tracking-wider text-[#f4efe6] truncate">
+                    Frostwood Menu
+                  </div>
+                  <div className="text-[11px] text-[#9db4cb] truncate tabular-nums">
+                    {hud.zone.name} · Day {hud.dayNight.dayNumber} ({hud.dayNight.clockLabel}) · {weatherProfile.label}
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -2321,37 +3216,95 @@ export function GameHud({
                   <button
                     type="button"
                     onClick={() => onSellMeat()}
-                    className="px-2.5 py-1 rounded-md bg-[#b91c1c] hover:bg-[#dc2626] border border-[#fda4af]/60 text-xs font-bold tabular-nums text-[#ffe4e6] cursor-pointer transition-colors"
+                    className="px-2.5 py-1.5 rounded-lg bg-[#991b1b] hover:bg-[#b91c1c] text-xs font-bold tabular-nums text-[#ffe4e6] cursor-pointer transition-colors"
                   >
                     Sell Meat (+{allMeatGold}g)
                   </button>
                 )}
+                {cargoGold > 0 && (
+                  <button
+                    type="button"
+                    onClick={onSellAll}
+                    className="px-3 py-1.5 rounded-lg bg-[#f6c344] hover:bg-[#ffd05c] text-xs font-bold tabular-nums text-[#131d2b] cursor-pointer transition-colors"
+                  >
+                    Trade Cargo (+{cargoGold}g)
+                  </button>
+                )}
                 <button
                   type="button"
-                  disabled={cargoGold <= 0}
-                  onClick={onSellAll}
-                  className={`px-3 py-1 rounded-md text-xs font-bold tabular-nums transition-colors ${
-                    cargoGold > 0
-                      ? 'bg-[#f6c344] hover:bg-[#ffd05c] text-[#131d2b] cursor-pointer'
-                      : 'bg-[#22354f] text-[#6d839b] cursor-not-allowed'
-                  }`}
+                  data-testid="menu-return-title-btn"
+                  onClick={onTitle}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#1c2d45] hover:bg-[#263d5c] border border-[#6e8eb0]/35 text-xs font-bold text-[#cbd5e1] cursor-pointer inline-flex items-center gap-1.5 transition-colors"
                 >
-                  Trade Cargo (+{cargoGold}g)
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Main Menu</span>
                 </button>
                 <button
                   type="button"
                   tabIndex={-1}
-                  aria-label="Close Upgrade Drawer"
+                  data-testid="close-unified-menu-btn"
+                  aria-label="Close Menu"
                   onClick={(e) => {
                     e.currentTarget.blur();
                     onToggleDrawer();
                   }}
-                  className="px-2.5 py-1 rounded-md bg-[#22354f] hover:bg-[#2d4464] text-xs font-semibold text-[#d6e2ef] cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-[#22354f] hover:bg-[#2d4464] text-xs font-bold text-[#f4efe6] cursor-pointer inline-flex items-center gap-1 transition-colors"
                 >
-                  Close [U]
+                  <X className="w-3.5 h-3.5" />
+                  <span>Close [Tab]</span>
                 </button>
               </div>
             </div>
+
+            {/* 2-Column Body: Clean Sidebar Navigation + Active View */}
+            <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+              <nav
+                aria-label="Menu Sections"
+                data-testid="unified-menu-nav"
+                className="md:w-48 shrink-0 bg-[#101c2d] border-b md:border-b-0 md:border-r border-[#6e8eb0]/25 p-2 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto"
+              >
+                {(
+                  [
+                    { id: 'camp' as DrawerTab, label: 'Camp & Base', icon: Hammer },
+                    { id: 'craft' as DrawerTab, label: `Station · T${hud.gearBonuses.setTier}`, icon: Wrench },
+                    { id: 'inventory' as DrawerTab, label: `Pack (${hud.backpackUsedSlots}/${hud.backpackMaxItems})`, icon: Backpack },
+                    { id: 'travel' as DrawerTab, label: 'World & Travel', icon: MapIcon },
+                    { id: 'city' as DrawerTab, label: 'Frostcave City', icon: Store },
+                    { id: 'festival' as DrawerTab, label: 'Festival', icon: Sparkles },
+                    { id: 'bestiary' as DrawerTab, label: `Bestiary (${discoveredCount}/${totalSpeciesCount})`, icon: BookOpen },
+                    { id: 'pets' as DrawerTab, label: `Pets (${hud.pets.tamedPets.length}/${hud.pets.maxSlots})`, icon: PawPrint },
+                    { id: 'skills' as DrawerTab, label: totalSkillPoints > 0 ? `Skills (+${totalSkillPoints})` : 'Skills', icon: Award },
+                    { id: 'achievements' as DrawerTab, label: `Badges (${hud.achievementsUnlockedCount}/${hud.achievements.length})`, icon: Trophy },
+                    { id: 'daily' as DrawerTab, label: hud.dailyLogin.canClaimToday ? 'Daily Drop (!)' : 'Daily Drop', icon: Gift },
+                    { id: 'saves' as DrawerTab, label: 'Save & Load', icon: Save },
+                    { id: 'mystery' as DrawerTab, label: 'Unknown', icon: Sparkles },
+                    { id: 'settings' as DrawerTab, label: 'Settings', icon: Settings },
+                  ]
+                ).map((item) => {
+                  const Icon = item.icon;
+                  const active = drawerTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      data-testid={`drawer-tab-${item.id}`}
+                      onClick={() => onChangeDrawerTab(item.id)}
+                      className={`shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold text-left cursor-pointer whitespace-nowrap ${
+                        active
+                          ? item.id === 'mystery'
+                            ? 'bg-[#d946ef] text-[#14071f]'
+                            : 'bg-[#d98a2b] text-[#131d2b]'
+                          : 'text-[#b8cbe0] hover:bg-[#1a2b42] hover:text-[#f4efe6]'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain p-3.5 sm:p-4">
 
             {drawerTab === 'camp' ? (
               <div className="flex flex-col gap-3">
@@ -2460,7 +3413,10 @@ export function GameHud({
                         key={id}
                         data-testid={`camp-building-card-${id}`}
                         className={`rounded-lg bg-[#1d2e47] border p-3 flex flex-col justify-between gap-2 ${
-                          id === 'windbreak' || id === 'thermalConduit'
+                          id === 'windbreak' ||
+                          id === 'thermalConduit' ||
+                          id === 'watchtower' ||
+                          id === 'grandGranary'
                             ? 'border-[#7be0ff]/55'
                             : 'border-[#6e8eb0]/35'
                         }`}
@@ -2571,6 +3527,7 @@ export function GameHud({
                         ['all', 'All Station & Forge'],
                         ['craft', 'Hammer, Gears & Traps'],
                         ['gear', 'Armor, Weapons & Wings'],
+                        ['tree', 'Crafting Tree (Progression)'],
                       ] as const
                     ).map(([secId, label]) => (
                       <button
@@ -2589,6 +3546,257 @@ export function GameHud({
                     ))}
                   </div>
                 </div>
+
+                {/* Visual Crafting Dependency Tree Section */}
+                {stationSection === 'tree' && (
+                  <div
+                    data-testid="crafting-tree-panel"
+                    className="rounded-xl bg-[#152338] border border-[#f6c344]/55 p-3.5 flex flex-col gap-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2 border-b border-[#6e8eb0]/35">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Compass className="w-4 h-4 text-[#f6c344]" />
+                          <h4 className="text-sm font-extrabold text-[#fdf4ff] uppercase tracking-wider">
+                            Frontier Progression &amp; Rare Material Crafting Tree
+                          </h4>
+                        </div>
+                        <p className="text-xs text-[#b8cbe0] mt-0.5">
+                          Follow the dependency chains from base timber, stone and pelts all the way to Zone 4/5 Rare Materials and Mythic Ascensions.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tabular-nums">
+                        <span className="px-2 py-0.5 rounded bg-[#10231b] border border-[#4ade80]/50 text-[#bbf7d0]">
+                          Available
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-[#2b1722] border border-[#f87171]/50 text-[#fecaca]">
+                          Locked / Missing
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {/* Tier 1: Base Gathering & Components (Common) */}
+                      <div className="rounded-xl bg-[#111c2e] border-2 border-[#8ed49a]/60 p-3 flex flex-col gap-2.5 shadow-[0_4px_16px_rgba(74,222,128,0.12)]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-[#8ed49a] flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-[#8ed49a]" />
+                            Tier 1 · Common Base Materials
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-[#10231b] border border-[#8ed49a]/40 text-[#bbf7d0] text-[10px] font-bold">
+                            Common
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Raw Wood, Stone & Pelts',
+                                rarity: 'Common / Uncommon',
+                                tier: 'Tier 1 · Base Gathering',
+                                description:
+                                  'Sturdy frontier timber, rough flint stone, and warm animal pelts harvested from the wilderness.',
+                                sourceLocation: 'Zones 1 & 2 (Whispering Woods & Tundra)',
+                                dropRate: '100% Harvest Rate (Yield: +1 to +3 per action)',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#18263a] border-2 border-[#8ed49a]/50 p-2 flex items-center justify-between cursor-pointer hover:border-[#8ed49a] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#f4efe6]">Raw Wood, Stone &amp; Pelts</div>
+                              <div className="text-[10px] text-[#9db4cb]">Harvested from Forest Trees &amp; Boulders</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#143024] text-[#bbf7d0] text-[10px] font-bold">
+                              Wood {hud.resources.wood} · Stone {hud.resources.stone ?? 0}
+                            </span>
+                          </div>
+
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Clockwork Gears',
+                                rarity: 'Common Component',
+                                tier: 'Tier 1 · Workbench Part',
+                                description:
+                                  'Precision mechanical components built at the camp workbench to construct advanced tools and structures.',
+                                sourceLocation: 'Camp Workbench (Crafting Station)',
+                                dropRate: '100% Success Rate (Cost: 2 Wood, 2 Stone, 5 Gold)',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#18263a] border-2 border-[#f6c344]/55 p-2 flex items-center justify-between cursor-pointer hover:border-[#f6c344] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#fde68a]">Clockwork Gears</div>
+                              <div className="text-[10px] text-[#9db4cb]">Workbench Part (Wood + Stone + 5g)</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#2c2214] text-[#fde68a] text-[10px] font-bold tabular-nums">
+                              {hud.backpackInventory.clockwork_gear ?? 0} Built
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tier 2: Station Tools & Mid Tier Gear (Rare) */}
+                      <div className="rounded-xl bg-[#111c2e] border-2 border-[#7be0ff]/65 p-3 flex flex-col gap-2.5 shadow-[0_4px_16px_rgba(123,224,255,0.12)]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-[#7be0ff] flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-[#7be0ff]" />
+                            Tier 2 · Rare Tools &amp; Gear
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-[#14344d] border border-[#7be0ff]/40 text-[#9fe8ff] text-[10px] font-bold">
+                            Rare
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Hammer Temper & Toolkit',
+                                rarity: 'Rare',
+                                tier: 'Tier 2 · Station Buff',
+                                description:
+                                  'Hardened steel smithing tools and temper oils to amplify workstation output and gathering speed.',
+                                sourceLocation: 'Camp Forge & Crafting Station',
+                                dropRate: '100% Permanent Buff (+25% Efficiency)',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#18263a] border-2 border-[#7be0ff]/45 p-2 flex items-center justify-between cursor-pointer hover:border-[#7be0ff] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#f4efe6]">Hammer Temper &amp; Toolkit</div>
+                              <div className="text-[10px] text-[#9db4cb]">Requires Clockwork Gears + Wood/Stone</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#1d3042] text-[#9fe8ff] text-[10px] font-bold">
+                              Buffs Active
+                            </span>
+                          </div>
+
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Tier II–IV Armor & Tools',
+                                rarity: 'Rare',
+                                tier: 'Tier 2 · Gear Progression',
+                                description:
+                                  'Forged steel axes, composite hunter bows, and insulated cold-resistant garments.',
+                                sourceLocation: 'Camp Armorers & Weaponsmiths (Zones 2–4)',
+                                dropRate: '100% Upgrade Success',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#18263a] border-2 border-[#7be0ff]/45 p-2 flex items-center justify-between cursor-pointer hover:border-[#7be0ff] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#f4efe6]">Tier II–IV Armor &amp; Tools</div>
+                              <div className="text-[10px] text-[#9db4cb]">Axe, Bow, Coat, Boots, Gloves &amp; Pack</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#1d3042] text-[#9fe8ff] text-[10px] font-bold">
+                              Set Tier T{hud.gearBonuses.setTier}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tier 3: Rare Caldera/Starfall Materials & Mythic Ascensions (Mythic) */}
+                      <div className="rounded-xl bg-[#160b26] border-2 border-[#d946ef]/75 p-3 flex flex-col gap-2.5 shadow-[0_4px_18px_rgba(217,70,239,0.18)]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-[#e879f9] flex items-center gap-1.5">
+                            <span className="w-2 h-2 rotate-45 bg-[#e879f9] shadow-[0_0_6px_rgba(232,121,249,0.7)]" />
+                            Tier 3 · Mythic Materials &amp; Gear
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-[#4a1d6e] border border-[#d946ef]/60 text-[#f5d0fe] text-[10px] font-bold">
+                            Mythic
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Pyrewood & Brimstone Slag',
+                                rarity: 'Mythic',
+                                tier: 'Tier 3 · Rare Caldera Materials',
+                                description:
+                                  'Superheated volcanic timber and smoldering sulfur ore infused with intense magma heat.',
+                                sourceLocation: 'Zone 4 (Obsidian Caldera)',
+                                dropRate: '25% Rare Node Harvest Drop Rate',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#1c122b] border-2 border-[#d946ef]/55 p-2 flex items-center justify-between cursor-pointer hover:border-[#d946ef] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#f5d0fe]">Pyrewood &amp; Brimstone Slag</div>
+                              <div className="text-[10px] text-[#c084fc]">Zone 4 Obsidian Caldera Harvesting</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#3b0764] text-[#f5d0fe] text-[10px] font-bold tabular-nums">
+                              {(hud.rareMaterials?.pyrewood_heart ?? 0) + (hud.rareMaterials?.brimstone_slag ?? 0)} Materials
+                            </span>
+                          </div>
+
+                          <div
+                            onMouseEnter={() =>
+                              setTreeTooltip({
+                                title: 'Void Timber & Dark Matter',
+                                rarity: 'Mythic',
+                                tier: 'Tier 3 · Starfall Materials',
+                                description:
+                                  'Ether-warped stellar wood and gravity-bending cosmic ore from the edge of the void.',
+                                sourceLocation: 'Zone 5 (Starfall Eternal Zero)',
+                                dropRate: '10% Mythic Harvest Drop Rate',
+                              })
+                            }
+                            onMouseLeave={() => setTreeTooltip(null)}
+                            className="rounded-lg bg-[#1c122b] border-2 border-[#d946ef]/55 p-2 flex items-center justify-between cursor-pointer hover:border-[#d946ef] transition-colors"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-[#f5d0fe]">Void Timber &amp; Dark Matter</div>
+                              <div className="text-[10px] text-[#c084fc]">Zone 5 Starfall Eternal Zero</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#3b0764] text-[#f5d0fe] text-[10px] font-bold tabular-nums">
+                              {(hud.rareMaterials?.void_timber ?? 0) + (hud.rareMaterials?.dark_matter_ore ?? 0)} Materials
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => onChangeDrawerTab('mystery')}
+                            className="w-full py-1.5 px-3 rounded-lg bg-[#d946ef] hover:bg-[#e879f9] text-[#14071f] text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-colors text-center shadow-[0_0_12px_rgba(217,70,239,0.45)]"
+                          >
+                            Open Mysteries Unknown Shop [Y]
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hover Tooltip Inspection Details Box */}
+                    <div className="rounded-lg bg-[#0d1726] border border-[#6e8eb0]/40 p-2.5 flex flex-col gap-1 transition-colors">
+                      {treeTooltip ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-[#f6c344] uppercase tracking-wider">
+                              {treeTooltip.title}
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#1e2f47] text-[#9fe8ff]">
+                              {treeTooltip.rarity} · {treeTooltip.tier}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#e2ecf7]">{treeTooltip.description}</p>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[10px] font-semibold text-[#b8cbe0] border-t border-[#6e8eb0]/25">
+                            <span>📍 Source: <strong className="text-[#f4efe6]">{treeTooltip.sourceLocation}</strong></span>
+                            <span>⚡ Drop Rate: <strong className="text-[#8ed49a]">{treeTooltip.dropRate}</strong></span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-[11px] text-[#9db4cb] text-center italic py-0.5">
+                          🔍 Hover over any crafting node above to inspect material descriptions, source locations, and drop rates.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Blueprint Crafting Section */}
                 {(stationSection === 'all' || stationSection === 'craft') && (
@@ -3076,388 +4284,23 @@ export function GameHud({
                 )}
               </div>
             ) : drawerTab === 'inventory' ? (
-              <div data-testid="backpack-panel" className="flex flex-col gap-3">
-                {/* Backpack Preparedness & Buff Link Summary */}
-                <div
-                  data-testid="backpack-preparedness-card"
-                  className="rounded-lg bg-[#162d33] border border-[#8ed49a]/50 p-3 flex flex-wrap items-center justify-between gap-3"
-                >
-                  <div className="min-w-[220px] flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8ed49a] inline-flex items-center gap-1">
-                        <Zap className="w-3.5 h-3.5" />
-                        Backpack Inventory · Buff Link &amp; Gear Loadout
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-[#0f2126] border border-[#8ed49a]/40 text-[10px] font-bold tabular-nums text-[#a7f3d0]">
-                        {hud.backpackUsedSlots}/{hud.backpackMaxItems} Items
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-[#0f2126] border border-[#6e8eb0]/40 text-[10px] font-bold tabular-nums text-[#dce6f2]">
-                        Cargo {hud.packUsed}/{hud.packCapacity}
-                      </span>
-                    </div>
-                    <div className="text-xs text-[#d6f5e3] mt-1 font-semibold">
-                      Remove or equip your forged Gear &amp; Wings below, or activate stocked items with [3]/[4]/[5] for Pack Link combat buffs.
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold tabular-nums">
-                      <span className="text-[#f6c344]">
-                        Power +{Math.round((hud.backpackPreparedness.damageMult - 1) * 100)}%
-                      </span>
-                      <span className="text-[#7be0ff]">
-                        Move +{Math.round((hud.backpackPreparedness.moveSpeedMult - 1) * 100)}%
-                      </span>
-                      <span className="text-[#8ed49a]">
-                        Chill -{Math.round((1 - hud.backpackPreparedness.coldDecayMult) * 100)}%
-                      </span>
-                      <span className="text-[#fde68a]">
-                        Armed Traps: {hud.deployedTraps.length}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onChangeDrawerTab('craft')}
-                      className="px-3 py-1.5 rounded bg-[#d98a2b] hover:bg-[#ea9c3b] text-xs font-bold uppercase tracking-wider text-[#131d2b] cursor-pointer transition-colors"
-                    >
-                      Station &amp; Forge [C]
-                    </button>
-                  </div>
-                </div>
-
-                {/* Gear & Wings Inventory Management (Remove / Equip) */}
-                <div
-                  data-testid="backpack-equipment-manager"
-                  className="rounded-lg bg-[#152438] border border-[#6e8eb0]/40 p-3 flex flex-col gap-2"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#9fe8ff] inline-flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5" />
-                      Equipped Gear &amp; Wings Loadout
-                    </span>
-                    <span className="text-[11px] font-semibold text-[#9db4cb] tabular-nums">
-                      Active Set Tier: T{hud.gearBonuses.setTier}/5 · HP Max {hud.maxHp} · Pack Cap{' '}
-                      {hud.packCapacity}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-                    {GEAR_SLOT_ORDER.map((slot) => {
-                      const ownedTier = hud.unlockedGear[slot] ?? 1;
-                      const equippedTier = hud.gear[slot] ?? 0;
-                      const equipped = equippedTier > 0;
-                      const ownedSpec = getGearSlotSpec(slot, ownedTier);
-                      const meta = GEAR_SLOT_META[slot];
-                      return (
-                        <div
-                          key={slot}
-                          data-testid={`backpack-gear-card-${slot}`}
-                          className={`rounded-lg border p-2.5 flex flex-col justify-between gap-2 ${
-                            equipped
-                              ? 'bg-[#1c3048] border-[#7be0ff]/55'
-                              : 'bg-[#172130] border-[#6e8eb0]/30 opacity-85'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#9db4cb] truncate">
-                                {meta.label}
-                              </span>
-                              <span
-                                className={`shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                  equipped
-                                    ? 'bg-[#143429] text-[#8ed49a]'
-                                    : 'bg-[#3b1d1d] text-[#fca5a5]'
-                                }`}
-                              >
-                                {equipped ? `Equipped T${equippedTier}` : 'Removed'}
-                              </span>
-                            </div>
-                            <div className="font-display font-bold text-xs text-[#f4efe6] mt-0.5 truncate">
-                              {ownedSpec.name}
-                            </div>
-                            <div className="text-[10px] text-[#b8cbe0] mt-0.5">
-                              {equipped ? ownedSpec.summary : `Stored T${ownedTier} in Backpack`}
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            data-testid={`toggle-equip-${slot}`}
-                            onClick={() => (equipped ? onUnequipGear(slot) : onEquipGear(slot))}
-                            className={`w-full py-1 rounded text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                              equipped
-                                ? 'bg-[#3b1d1d] hover:bg-[#522727] border border-[#f87171]/50 text-[#fecaca]'
-                                : 'bg-[#1f4d36] hover:bg-[#2a6648] border border-[#8ed49a]/60 text-[#bbf7d0]'
-                            }`}
-                          >
-                            {equipped ? 'Remove' : 'Equip'}
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                    {/* Wings of Fire Equipment Slot */}
-                    <div
-                      data-testid="backpack-wings-card"
-                      className={`rounded-lg border p-2.5 flex flex-col justify-between gap-2 ${
-                        hud.wingsTier > 0 && hud.wingsEquipped
-                          ? 'bg-[#36170d] border-[#fb923c]/75'
-                          : 'bg-[#1b1720] border-[#9a3412]/40'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#fb923c] inline-flex items-center gap-1">
-                            <Flame className="w-3 h-3" />
-                            Wings Relic
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                              hud.wingsTier === 0
-                                ? 'bg-[#2a2024] text-[#fdba74]'
-                                : hud.wingsEquipped
-                                  ? 'bg-[#143429] text-[#8ed49a]'
-                                  : 'bg-[#3b1d1d] text-[#fca5a5]'
-                            }`}
-                          >
-                            {hud.wingsTier === 0
-                              ? `${hud.cityDailyQuestsCompleted}/${hud.wingsQuestRequirement}`
-                              : hud.wingsEquipped
-                                ? `Active T${hud.wingsTier}`
-                                : `Stored T${hud.wingsTier}`}
-                          </span>
-                        </div>
-                        <div className="font-display font-bold text-xs text-[#fff7ed] mt-0.5 truncate">
-                          {hud.wingsSpec.name}
-                        </div>
-                        <div className="text-[10px] text-[#fed7aa] mt-0.5">
-                          {hud.wingsTier === 0
-                            ? `Unlock after ${hud.wingsQuestRequirement} City Daily Quests`
-                            : hud.wingsEquipped
-                              ? hud.wingsSpec.subtitle
-                              : 'Furling flame aura folded'}
-                        </div>
-                      </div>
-
-                      {hud.wingsTier > 0 ? (
-                        <button
-                          type="button"
-                          data-testid="toggle-equip-wings"
-                          onClick={onToggleWingsEquipped}
-                          className={`w-full py-1 rounded text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                            hud.wingsEquipped
-                              ? 'bg-[#3b1d1d] hover:bg-[#522727] border border-[#f87171]/50 text-[#fecaca]'
-                              : 'bg-[#ea580c] hover:bg-[#f97316] text-[#fff7ed]'
-                          }`}
-                        >
-                          {hud.wingsEquipped ? 'Remove' : 'Equip'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onChangeDrawerTab('city')}
-                          className="w-full py-1 rounded bg-[#2c2214] hover:bg-[#3d2f1b] border border-[#f6c344]/50 text-[11px] font-bold uppercase tracking-wider text-[#fde68a] cursor-pointer transition-colors"
-                        >
-                          City Quests
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Weighted Random Loot Scaling & Drop Odds Breakdown (Secret Chests & Zone Bosses) */}
-                <div
-                  data-testid="loot-scaling-card"
-                  className="rounded-lg bg-[#192338] border border-[#f6c344]/45 p-3 flex flex-col gap-2"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#f6c344] inline-flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Weighted Loot Scaling · Chest &amp; Boss Drop Table
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold tabular-nums">
-                      <span
-                        data-testid="loot-scaling-tier-label"
-                        className="px-2 py-0.5 rounded bg-[#2a1f10] border border-[#f6c344]/55 text-[#fde68a]"
-                      >
-                        {hud.lootScaling.tierLabel}
-                      </span>
-                      <span
-                        data-testid="loot-scaling-multiplier"
-                        className="px-2 py-0.5 rounded bg-[#10283b] border border-[#7be0ff]/55 text-[#9fe8ff]"
-                      >
-                        Zone T{hud.lootScaling.zoneTier} · Gear Lv{' '}
-                        {hud.lootScaling.effectiveGearLevel.toFixed(1)} · x
-                        {hud.lootScaling.resourceMultiplier.toFixed(2)} Yield
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                    <div className="rounded bg-[#121a2a] border border-[#4a6280]/40 px-2.5 py-2 flex flex-col gap-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#9db4cb]">
-                        Secret Chest Spawn Weights ({hud.zone.name})
-                      </div>
-                      <div
-                        data-testid="chest-rarity-weights"
-                        className="flex flex-wrap items-center gap-3 font-bold tabular-nums text-[11px]"
-                      >
-                        <span className="text-[#8ed49a]">
-                          Supply {hud.lootScaling.chestRarityPercentages.supply}%
-                        </span>
-                        <span className="text-[#7be0ff]">
-                          Relic {hud.lootScaling.chestRarityPercentages.relic}%
-                        </span>
-                        <span className="text-[#f0abfc]">
-                          Aurora {hud.lootScaling.chestRarityPercentages.aurora}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="rounded bg-[#121a2a] border border-[#4a6280]/40 px-2.5 py-2 flex flex-col gap-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#9db4cb]">
-                        Weighted Item Rarity Odds (Scales w/ Zone &amp; Gear)
-                      </div>
-                      <div
-                        data-testid="item-rarity-weights"
-                        className="flex flex-wrap items-center gap-2.5 font-bold tabular-nums text-[11px]"
-                      >
-                        <span className="text-[#cbd5e1]">
-                          Common {hud.lootScaling.itemRarityPercentages.common}%
-                        </span>
-                        <span className="text-[#8ed49a]">
-                          Uncommon {hud.lootScaling.itemRarityPercentages.uncommon}%
-                        </span>
-                        <span className="text-[#7be0ff]">
-                          Rare {hud.lootScaling.itemRarityPercentages.rare}%
-                        </span>
-                        <span className="text-[#fbbf24]">
-                          Epic {hud.lootScaling.itemRarityPercentages.epic}%
-                        </span>
-                        <span className="text-[#f0abfc]">
-                          Mythic {hud.lootScaling.itemRarityPercentages.mythic}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {hud.lootScaling.lastRoll && (
-                    <div
-                      data-testid="last-loot-roll-banner"
-                      className="rounded bg-[#221a12] border border-[#f6c344]/55 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="font-bold text-[#fde68a]">
-                        Latest Spoils ({hud.lootScaling.lastRoll.sourceLabel} · +
-                        {hud.lootScaling.lastRoll.gold}g):
-                      </span>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {hud.lootScaling.lastRoll.items.map((rolled, idx) => (
-                          <span
-                            key={`${rolled.id}-${idx}`}
-                            className={`px-1.5 py-0.5 rounded border text-[10px] font-extrabold uppercase ${rarityBadgeStyle(
-                              rolled.rarity,
-                            )}`}
-                          >
-                            {rolled.qty}x {rolled.name} ({rolled.rarity})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Backpack Items Grid (stocked first) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {[...ALL_CRAFT_RECIPES]
-                    .sort((a, b) => (hud.backpackInventory[b.id] ?? 0) - (hud.backpackInventory[a.id] ?? 0))
-                    .map((recipe) => {
-                      const qty = hud.backpackInventory[recipe.id] ?? 0;
-                      const activeSecs = getLinkedBuffSeconds(recipe.id, hud.activeBuffs);
-                      const isComponent = recipe.usableKind === 'component';
-                      const isTrap = recipe.usableKind === 'trap';
-
-                      return (
-                        <div
-                          key={recipe.id}
-                          data-testid={`backpack-item-${recipe.id}`}
-                          className={`rounded-lg border p-3 flex flex-col justify-between gap-2 ${
-                            qty > 0
-                              ? 'bg-[#1d3149] border-[#8ed49a]/55'
-                              : 'bg-[#172538]/80 border-[#4d6887]/30 opacity-75'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-display font-bold text-sm text-[#f4efe6]">
-                                {recipe.name}
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded text-xs font-extrabold tabular-nums ${
-                                  qty > 0
-                                    ? 'bg-[#143429] border border-[#8ed49a]/70 text-[#8ed49a]'
-                                    : 'bg-[#132032] border border-[#455c78]/40 text-[#7f96ad]'
-                                }`}
-                              >
-                                x{qty}
-                              </span>
-                            </div>
-
-                            <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] font-bold uppercase">
-                              <span className={rarityColor(recipe.rarity)}>
-                                {getRarityLabel(recipe.rarity)} · {recipe.category}
-                              </span>
-                              {activeSecs > 0 && (
-                                <span className="text-[#8ed49a] tabular-nums">
-                                  Buff {Math.ceil(activeSecs)}s
-                                </span>
-                              )}
-                            </div>
-
-                            <p className="text-xs text-[#b8cbe0] mt-1">{recipe.summary}</p>
-                          </div>
-
-                          <div className="pt-1 border-t border-[#6e8eb0]/20 flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-[#9db4cb]">
-                              {isComponent
-                                ? 'Crafting Material'
-                                : recipe.id === 'snare_trap'
-                                  ? 'Hotkey [3]'
-                                  : recipe.id === 'frost_trap'
-                                    ? 'Hotkey [4]'
-                                    : 'Hotkey [5] / Buff'}
-                            </span>
-
-                            {isComponent ? (
-                              <button
-                                type="button"
-                                onClick={() => onChangeDrawerTab('craft')}
-                                className="px-3 py-1 rounded bg-[#273d5c] hover:bg-[#335078] text-xs font-bold text-[#f6d37a] cursor-pointer transition-colors"
-                              >
-                                Use at Station
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                data-testid={`use-backpack-${recipe.id}`}
-                                disabled={qty <= 0}
-                                onClick={() => onUseBackpackItem(recipe.id)}
-                                className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wide transition-colors ${
-                                  qty > 0
-                                    ? isTrap
-                                      ? 'bg-[#7be0ff] hover:bg-[#9ee9ff] text-[#102030] cursor-pointer'
-                                      : 'bg-[#8ed49a] hover:bg-[#a6e5b1] text-[#0f1d17] cursor-pointer'
-                                    : 'bg-[#253750] text-[#6d839b] cursor-not-allowed'
-                                }`}
-                              >
-                                {isTrap ? 'Deploy Trap' : 'Activate Buff'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
+              <InventoryGui
+                hud={hud}
+                cargoGold={cargoGold}
+                onSelectTool={onSelectTool}
+                onEquipGear={onEquipGear}
+                onUnequipGear={onUnequipGear}
+                onToggleWingsEquipped={onToggleWingsEquipped}
+                onEquipAscension={onEquipAscension}
+                onUseBackpackItem={onUseBackpackItem}
+                onCraftItem={onCraftItem}
+                onSalvageBackpackItem={onSalvageBackpackItem}
+                onSellAll={onSellAll}
+                onSellMeat={onSellMeat}
+                onChangeDrawerTab={(tab) => onChangeDrawerTab(tab)}
+                rarityColor={rarityColor}
+                rarityBadgeStyle={rarityBadgeStyle}
+              />
             ) : drawerTab === 'festival' ? (
               <div data-testid="festival-panel" className="flex flex-col gap-3">
                 <div
@@ -4550,7 +5393,7 @@ export function GameHud({
                     })}
                 </div>
               </div>
-            ) : (
+            ) : drawerTab === 'skills' ? (
               <div data-testid="skills-panel" className="flex flex-col gap-2">
                 {/* Branch XP Progress & Skill Points Summary */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -4817,7 +5660,733 @@ export function GameHud({
                   })}
                 </div>
               </div>
+            ) : drawerTab === 'daily' ? (
+              <div data-testid="drawer-daily-panel" className="flex flex-col gap-3">
+                <div className="rounded-lg bg-[#18283e] border border-[#f6c344]/45 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Gift className="w-4 h-4 text-[#f6c344]" />
+                      <h3 className="text-sm font-bold text-[#f7f2e8] uppercase tracking-wider">
+                        7-Day Boreal Supply Drop
+                      </h3>
+                      <span className="px-2 py-0.5 rounded bg-[#2c2214] border border-[#f6c344]/50 text-[10px] font-extrabold text-[#fde68a] tabular-nums">
+                        Streak: {hud.dailyLogin.streakDay} Day{hud.dailyLogin.streakDay === 1 ? '' : 's'} · Total Claimed: {hud.dailyLogin.totalDaysClaimed}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#b8cbe0] mt-1">
+                      Open the expedition each real-world day to claim bonus resources and rare crafted supplies directly into your pack.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="drawer-claim-daily-btn"
+                    disabled={!hud.dailyLogin.canClaimToday}
+                    onClick={onClaimDailyLoginReward}
+                    className={`shrink-0 px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${
+                      hud.dailyLogin.canClaimToday
+                        ? 'bg-[#f6c344] hover:bg-[#ffd463] text-[#131d2b] cursor-pointer shadow-[0_0_16px_rgba(246,195,68,0.4)]'
+                        : 'bg-[#22354f] text-[#7f96ad] cursor-not-allowed'
+                    }`}
+                  >
+                    <Gift className="w-4 h-4" />
+                    {hud.dailyLogin.canClaimToday
+                      ? `Claim Day ${hud.dailyLogin.todayReward.day} Reward`
+                      : 'Claimed Today — Come Back Tomorrow'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2.5">
+                  {hud.dailyLogin.schedule.map((reward) => {
+                    const isToday = reward.day === hud.dailyLogin.todayReward.day;
+                    const isPastClaimed =
+                      (!hud.dailyLogin.canClaimToday && reward.day <= hud.dailyLogin.todayReward.day) ||
+                      (hud.dailyLogin.canClaimToday && reward.day < hud.dailyLogin.todayReward.day);
+                    const resourceEntries = Object.entries(reward.resources) as Array<[keyof ResourceCounts, number | undefined]>;
+                    const craftItemEntries = Object.entries(reward.craftItems) as Array<[CraftItemId, number | undefined]>;
+                    return (
+                      <div
+                        key={reward.day}
+                        data-testid={`daily-reward-day-${reward.day}`}
+                        className={`rounded-lg border p-3 flex flex-col justify-between gap-2 ${
+                          isToday && hud.dailyLogin.canClaimToday
+                            ? 'bg-[#2c2214]/90 border-[#f6c344] shadow-[0_0_14px_rgba(246,195,68,0.28)]'
+                            : isPastClaimed
+                              ? 'bg-[#132620]/85 border-[#8ed49a]/55'
+                              : 'bg-[#17263b] border-[#516d8c]/40'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#fde68a]">
+                              Day {reward.day}
+                            </span>
+                            {isPastClaimed ? (
+                              <span className="px-1.5 py-0.5 rounded bg-[#163828] text-[#8ed49a] text-[9px] font-bold uppercase">
+                                Claimed
+                              </span>
+                            ) : isToday && hud.dailyLogin.canClaimToday ? (
+                              <span className="px-1.5 py-0.5 rounded bg-[#f6c344] text-[#131d2b] text-[9px] font-extrabold uppercase">
+                                Ready
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-semibold uppercase text-[#88a0b9]">
+                                Upcoming
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs font-bold text-[#f4efe6] mt-1">{reward.title}</div>
+                          <p className="text-[11px] text-[#9db4cb] mt-0.5 leading-snug">
+                            {reward.subtitle}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col gap-1 pt-1.5 border-t border-[#6e8eb0]/25 text-[11px]">
+                          <div className="flex flex-wrap gap-1">
+                            {resourceEntries.map(([resKey, amt]) =>
+                              (amt ?? 0) > 0 ? (
+                                <span
+                                  key={resKey}
+                                  className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#6e8eb0]/35 text-[#dce6f2] font-bold tabular-nums uppercase text-[10px]"
+                                >
+                                  +{amt} {resKey}
+                                </span>
+                              ) : null,
+                            )}
+                          </div>
+                          {craftItemEntries.length > 0 && (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              {craftItemEntries.map(([itemId, count]) => {
+                                if (!count || count <= 0) return null;
+                                const recipe = getCraftRecipe(itemId);
+                                return (
+                                  <span
+                                    key={itemId}
+                                    className="px-1.5 py-0.5 rounded bg-[#1f334d] border border-[#7be0ff]/45 text-[#9fe8ff] font-bold text-[10px]"
+                                  >
+                                    +{count}× {recipe.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : drawerTab === 'mystery' ? (
+              <div data-testid="drawer-mystery-panel" className="flex flex-col gap-3.5">
+                {/* Mysteries Unknown Header & Lore Banner */}
+                <div className="rounded-xl bg-[#160b26] border border-[#d946ef]/60 p-3.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#e879f9]" />
+                      <h3 className="text-sm font-extrabold text-[#fdf4ff] uppercase tracking-wider">
+                        Mysteries Unknown Emporium — Xylar the Unknown
+                      </h3>
+                      <span className="px-2 py-0.5 rounded bg-[#3b0764] border border-[#d946ef]/70 text-[10px] font-extrabold uppercase tracking-wider text-[#f5d0fe]">
+                        Zone 4 &amp; Zone 5 Singularity Sanctum
+                      </span>
+                      {hud.nearMysteryShop && (
+                        <span className="px-2 py-0.5 rounded bg-[#14532d] border border-[#4ade80]/70 text-[10px] font-extrabold uppercase tracking-wider text-[#bbf7d0]">
+                          At Shrine [E / Y]
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#e9d5ff] mt-1 leading-relaxed">
+                      Harvest <span className="text-[#fb923c] font-bold">Ember-Vein Pyrewood</span>,{' '}
+                      <span className="text-[#f87171] font-bold">Infernal Brimstone</span>, and{' '}
+                      <span className="text-[#38bdf8] font-bold">Voltaic Fulminite</span> in{' '}
+                      <span className="text-[#fde68a] font-bold">Zone 4 (Obsidian Caldera)</span>, or venture into{' '}
+                      <span className="text-[#e879f9] font-bold">Zone 5 (Starfall Eternal Zero)</span> for{' '}
+                      <span className="text-[#c084fc] font-bold">Astral Void-Heartwood</span> &amp;{' '}
+                      <span className="text-[#f472b6] font-bold">Singularity Dark-Matter Monoliths</span> to forge Mythic Visual Panoply &amp; Forbidden Relics.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      data-testid="mystery-warp-level4"
+                      onClick={() => onSelectZone('level4')}
+                      className="px-3 py-1.5 rounded-lg bg-[#3b1510] hover:bg-[#521d16] border border-[#f97316]/75 text-xs font-extrabold text-[#fed7aa] cursor-pointer transition-colors"
+                    >
+                      Warp Zone 4 (Caldera)
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="mystery-warp-level5"
+                      onClick={() => onSelectZone('level5')}
+                      className="px-3 py-1.5 rounded-lg bg-[#2e1042] hover:bg-[#41175c] border border-[#d946ef]/80 text-xs font-extrabold text-[#f5d0fe] cursor-pointer transition-colors"
+                    >
+                      Warp Zone 5 (Starfall)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Rare & Mythic Material Vault Bar */}
+                <div
+                  data-testid="rare-materials-vault"
+                  className="rounded-xl bg-[#11192a] border border-[#6e8eb0]/45 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#c7d6e6]">
+                      Rare Woods &amp; Ores Vault (Zones 4 &amp; 5)
+                    </span>
+                    <span className="text-[11px] text-[#9db4cb]">
+                      Chop glowing Pyrewood / Void-Heartwood trees &amp; mine Brimstone / Fulminite / Dark-Matter spires
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {RARE_MATERIAL_ORDER.map((matId) => {
+                      const spec = RARE_MATERIAL_SPECS[matId];
+                      const count = hud.rareMaterials?.[matId] ?? 0;
+                      return (
+                        <div
+                          key={matId}
+                          data-testid={`rare-mat-${matId}`}
+                          className="rounded-lg bg-[#162338] border border-[#6e8eb0]/40 px-2.5 py-2 flex flex-col justify-between"
+                          style={{ borderColor: count > 0 ? spec.accentHex : undefined }}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              className="text-[11px] font-extrabold truncate"
+                              style={{ color: spec.accentHex }}
+                            >
+                              {spec.shortName}
+                            </span>
+                            <span className="text-xs font-extrabold tabular-nums text-[#f8fafc]">
+                              {count}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-[#94a3b8] truncate mt-0.5">
+                            {spec.sourceHint}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Mythic Visual Gear & Equipment Ascensions */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#f5d0fe]">
+                      Mythic Visual Gear &amp; Elemental / Dark-Matter Ascensions
+                    </h4>
+                    <span className="text-[11px] text-[#cbd5e1]">
+                      Equipped Ascension transforms your 3D Armor, Crown, Back Rift, Axe &amp; Bow
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {MYTHIC_ASCENSION_ORDER.map((ascId) => {
+                      const spec = MYTHIC_ASCENSION_SPECS[ascId];
+                      const isUnlocked = hud.unlockedAscensions?.includes(ascId) ?? false;
+                      const isEquipped = hud.equippedAscension === ascId;
+                      const canUnlock = canUnlockMythicAscension(
+                        ascId,
+                        hud.resources,
+                        hud.rareMaterials,
+                        hud.unlockedAscensions ?? [],
+                      );
+
+                      return (
+                        <div
+                          key={ascId}
+                          data-testid={`ascension-card-${ascId}`}
+                          className={`rounded-xl p-3.5 border flex flex-col justify-between gap-3 transition-colors ${
+                            isEquipped
+                              ? 'bg-[#261138] border-[#e879f9] shadow-[0_0_20px_rgba(217,70,239,0.28)]'
+                              : isUnlocked
+                                ? 'bg-[#192338] border-[#7be0ff]/65'
+                                : 'bg-[#141e30] border-[#516d8c]/45'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider text-[#0f172a]"
+                                    style={{ backgroundColor: spec.primaryHex }}
+                                  >
+                                    {spec.elementLabel}
+                                  </span>
+                                  {isEquipped && (
+                                    <span className="px-1.5 py-0.5 rounded bg-[#f6c344] text-[#131d2b] text-[9px] font-extrabold uppercase">
+                                      Equipped
+                                    </span>
+                                  )}
+                                  {!isEquipped && isUnlocked && (
+                                    <span className="px-1.5 py-0.5 rounded bg-[#22c55e]/25 border border-[#4ade80]/60 text-[#bbf7d0] text-[9px] font-extrabold uppercase">
+                                      Unlocked
+                                    </span>
+                                  )}
+                                </div>
+                                <h5 className="text-sm font-extrabold text-[#f8fafc] mt-1">
+                                  {spec.name}
+                                </h5>
+                                <div className="text-[11px] font-semibold text-[#cbd5e1]">
+                                  {spec.subtitle}
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-[#94a3b8] mt-2 leading-relaxed">
+                              {spec.description}
+                            </p>
+
+                            {/* Stat & Visual Badges */}
+                            <div className="mt-2.5 flex flex-wrap gap-1 text-[10px] font-bold tabular-nums">
+                              <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-[#f97316]/50 text-[#fed7aa]">
+                                DMG x{spec.bonuses.damageMult.toFixed(2)}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-[#38bdf8]/50 text-[#bae6fd]">
+                                Yield x{spec.bonuses.gatherYieldMult.toFixed(2)}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-[#4ade80]/50 text-[#bbf7d0]">
+                                +{spec.bonuses.maxHpBonus} Max HP · +{spec.bonuses.hpRegenPerSec}/s
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-[#e879f9]/55 text-[#f5d0fe]">
+                                {spec.bonuses.onHitEffectLabel} (+{Math.round(spec.bonuses.onHitBonusDamagePct * 100)}%)
+                              </span>
+                            </div>
+
+                            <div className="mt-2 text-[10px] text-[#e2e8f0] bg-[#0d1524] rounded-md px-2 py-1 border border-[#475569]/40">
+                              <span className="font-bold text-[#f5d0fe]">3D Visual Gear: </span>
+                              {spec.visualSummary}
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-[#516d8c]/30 flex flex-col gap-2">
+                            {!isUnlocked && (
+                              <div className="flex flex-col gap-1.5">
+                                <CostTags cost={spec.resourceCost} resources={hud.resources} />
+                                <div className="flex flex-wrap gap-1">
+                                  {RARE_MATERIAL_ORDER.map((matId) => {
+                                    const req = spec.rareMaterialCost[matId] ?? 0;
+                                    if (req <= 0) return null;
+                                    const have = hud.rareMaterials?.[matId] ?? 0;
+                                    const matSpec = RARE_MATERIAL_SPECS[matId];
+                                    const ok = have >= req;
+                                    return (
+                                      <span
+                                        key={matId}
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums border ${
+                                          ok
+                                            ? 'bg-[#143024] border-[#4ade80]/60 text-[#bbf7d0]'
+                                            : 'bg-[#2c161e] border-[#f87171]/60 text-[#fecaca]'
+                                        }`}
+                                      >
+                                        {matSpec.shortName} {have}/{req}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {isUnlocked ? (
+                              <button
+                                type="button"
+                                data-testid={`ascension-action-${ascId}`}
+                                onClick={() => onEquipAscension(isEquipped ? null : ascId)}
+                                className={`w-full py-1.5 px-3 rounded-lg text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-colors ${
+                                  isEquipped
+                                    ? 'bg-[#334155] hover:bg-[#475569] text-[#f8fafc]'
+                                    : 'bg-[#d946ef] hover:bg-[#e879f9] text-[#14071f]'
+                                }`}
+                              >
+                                {isEquipped ? 'Unequip Mythic Panoply' : 'Equip Mythic Panoply'}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid={`ascension-action-${ascId}`}
+                                disabled={!canUnlock}
+                                onClick={() => onUnlockAscension(ascId)}
+                                className={`w-full py-1.5 px-3 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-colors ${
+                                  canUnlock
+                                    ? 'bg-[#f6c344] hover:bg-[#ffd463] text-[#131d2b] cursor-pointer'
+                                    : 'bg-[#1e293b] text-[#64748b] cursor-not-allowed'
+                                }`}
+                              >
+                                {canUnlock ? 'Forge & Equip Mythic Gear' : 'Requires Rare Zone 4/5 Materials'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Mysteries Unknown Relics & Elixirs */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#7be0ff]">
+                    Mysteries Unknown Forbidden Relics &amp; Elixirs
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {MYSTERY_SHOP_ITEM_ORDER.map((itemId) => {
+                      const item = MYSTERY_SHOP_ITEMS[itemId];
+                      const affordable = canBuyMysteryShopItem(
+                        itemId,
+                        hud.resources,
+                        hud.rareMaterials,
+                      );
+                      return (
+                        <div
+                          key={itemId}
+                          data-testid={`mystery-item-${itemId}`}
+                          className="rounded-xl bg-[#152236] border border-[#6e8eb0]/45 p-3 flex flex-col justify-between gap-2.5"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className="text-xs font-extrabold"
+                                style={{ color: item.accentHex }}
+                              >
+                                {item.name}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#f6c344]/50 text-[10px] font-extrabold text-[#fde68a] tabular-nums">
+                                {item.goldCost}g
+                              </span>
+                            </div>
+                            <div className="text-[10px] font-semibold text-[#cbd5e1] mt-0.5">
+                              {item.effectSummary}
+                            </div>
+                            <p className="text-[11px] text-[#94a3b8] mt-1 leading-snug">
+                              {item.description}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-[#516d8c]/30 flex flex-col gap-2">
+                            <div className="flex flex-wrap gap-1">
+                              {RARE_MATERIAL_ORDER.map((matId) => {
+                                const req = item.rareMaterialCost[matId] ?? 0;
+                                if (req <= 0) return null;
+                                const have = hud.rareMaterials?.[matId] ?? 0;
+                                const matSpec = RARE_MATERIAL_SPECS[matId];
+                                const ok = have >= req;
+                                return (
+                                  <span
+                                    key={matId}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums border ${
+                                      ok
+                                        ? 'bg-[#143024] border-[#4ade80]/60 text-[#bbf7d0]'
+                                        : 'bg-[#2c161e] border-[#f87171]/60 text-[#fecaca]'
+                                    }`}
+                                  >
+                                    {matSpec.shortName} {have}/{req}
+                                  </span>
+                                );
+                              })}
+                            </div>
+
+                            <button
+                              type="button"
+                              data-testid={`buy-mystery-item-${itemId}`}
+                              disabled={!affordable}
+                              onClick={() => onBuyMysteryItem(itemId)}
+                              className={`w-full py-1.5 px-3 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-colors ${
+                                affordable
+                                  ? 'bg-[#7be0ff] hover:bg-[#9fe8ff] text-[#0c1928] cursor-pointer'
+                                  : 'bg-[#1e293b] text-[#64748b] cursor-not-allowed'
+                              }`}
+                            >
+                              {affordable ? 'Invoke Relic' : 'Insufficient Tribute'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : drawerTab === 'saves' ? (
+              <div data-testid="drawer-saves-panel" className="flex flex-col gap-3">
+                <div className="rounded-lg bg-[#18283e] border border-[#7be0ff]/45 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Save className="w-4 h-4 text-[#7be0ff]" />
+                      <h3 className="text-sm font-bold text-[#f7f2e8] uppercase tracking-wider">
+                        Expedition Save &amp; Load Manager
+                      </h3>
+                    </div>
+                    <p className="text-xs text-[#b8cbe0] mt-1">
+                      Save your current position, zone, resources, tools, armor, backpack items, and tamed pets to any slot, or restore a saved expedition at any time. Press <span className="text-[#f6c344] font-bold">[F5]</span> for instant Quick Save to Slot 1.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="drawer-quick-save-btn"
+                    onClick={() => onSaveGame('slot1')}
+                    className="shrink-0 px-4 py-2 rounded-lg bg-[#8ed49a] hover:bg-[#a5e3b0] text-[#0f1d17] text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
+                  >
+                    <Save className="w-4 h-4" />
+                    Quick Save Slot 1 [F5]
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {SAVE_SLOT_IDS.map((slotId) => {
+                    const slot = hud.saveSlots[slotId];
+                    const isAuto = slotId === 'autosave';
+                    const slotTitle =
+                      slotId === 'autosave'
+                        ? 'Autosave Slot'
+                        : `Manual Slot ${slotId.replace('slot', '')}`;
+                    return (
+                      <div
+                        key={slotId}
+                        data-testid={`drawer-save-card-${slotId}`}
+                        className="rounded-lg bg-[#17263b] border border-[#6e8eb0]/45 p-3.5 flex flex-col justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-extrabold uppercase tracking-wider text-[#7be0ff]">
+                              {slotTitle}
+                            </span>
+                            {slot ? (
+                              <span className="text-[11px] font-semibold text-[#9db4cb] tabular-nums">
+                                {new Date(slot.savedAt).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold uppercase text-[#6d839b]">
+                                Empty Slot
+                              </span>
+                            )}
+                          </div>
+
+                          {slot ? (
+                            <div className="mt-2 flex flex-col gap-1.5">
+                              <div className="text-xs font-bold text-[#f4efe6]">
+                                {slot.label} · Day {slot.dayNumber}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#c7d6e6] tabular-nums">
+                                <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#6e8eb0]/30">
+                                  HP {Math.round(slot.hp)}/{slot.maxHp}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#6e8eb0]/30">
+                                  Warmth {Math.round(slot.warmth)}/{slot.maxWarmth}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#f6c344]/40 text-[#fde68a]">
+                                  {slot.resources.gold}g
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#6e8eb0]/30">
+                                  Wood {slot.resources.wood} · Stone {slot.resources.stone} · Ice {slot.resources.ice}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-[#101c2c] border border-[#6e8eb0]/30">
+                                  Pets {slot.tamedPets.length}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-[#88a0b9] mt-2">
+                              No expedition recorded in this slot yet. Click Save Current Run below to store a snapshot here.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#6e8eb0]/25">
+                          <button
+                            type="button"
+                            data-testid={`drawer-save-${slotId}`}
+                            onClick={() => onSaveGame(slotId)}
+                            className="px-3 py-1.5 rounded-md bg-[#223854] hover:bg-[#2d4a6e] border border-[#7be0ff]/60 text-xs font-bold text-[#c9f4ff] cursor-pointer transition-colors inline-flex items-center gap-1.5"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            {isAuto ? 'Overwrite Autosave' : 'Save Current Run'}
+                          </button>
+
+                          <button
+                            type="button"
+                            data-testid={`drawer-load-${slotId}`}
+                            disabled={!slot}
+                            onClick={() => onLoadGame(slotId)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors inline-flex items-center gap-1.5 ${
+                              slot
+                                ? 'bg-[#f6c344] hover:bg-[#ffd463] text-[#131d2b] cursor-pointer'
+                                : 'bg-[#1b2a3f] text-[#6d839b] cursor-not-allowed'
+                            }`}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            Load Run
+                          </button>
+
+                          {slot && (
+                            <button
+                              type="button"
+                              data-testid={`drawer-delete-${slotId}`}
+                              onClick={() => onDeleteSave(slotId)}
+                              className="ml-auto px-2.5 py-1.5 rounded-md bg-[#2b1820] hover:bg-[#3f202c] border border-[#ef7b73]/50 text-xs font-bold text-[#fca5a5] cursor-pointer transition-colors inline-flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {drawerTab === 'travel' && (
+              <div data-testid="travel-tab-panel" className="flex flex-col gap-4">
+                <section className="rounded-xl bg-[#162438] border border-[#6e8eb0]/35 p-3.5">
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#6e8eb0]/20">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#7be0ff]">
+                      Fast Travel &amp; Expedition Zones
+                    </h3>
+                    <span className="text-[11px] font-semibold text-[#9db4cb]">
+                      Current: {hud.zone.name}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {(
+                      [
+                        { id: 'level1' as ZoneId, label: 'L1 · Frostwood Valley (1x)' },
+                        { id: 'level2' as ZoneId, label: 'L2 · Glacial Highlands (3x)' },
+                        { id: 'level3' as ZoneId, label: 'L3 · Rimefang Abyss (9x)' },
+                        { id: 'level4' as ZoneId, label: 'L4 · Obsidian Caldera (27x)' },
+                        { id: 'level5' as ZoneId, label: 'L5 · Starfall Zero (81x)' },
+                        { id: 'city' as ZoneId, label: 'Frostcave City (Sanctuary)' },
+                      ]
+                    ).map((item) => {
+                      const active = hud.zone.id === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          data-testid={`menu-travel-${item.id}`}
+                          onClick={() => {
+                            if (!active) onSelectZone(item.id);
+                          }}
+                          className={`px-3 py-2 rounded-lg border text-xs font-bold text-left cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-[#1f5c82] border-[#7be0ff] text-[#f0f9ff]'
+                              : 'bg-[#101c2d] hover:bg-[#1a2c46] border-[#6e8eb0]/30 text-[#dce6f2]'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      data-testid="menu-travel-lake"
+                      onClick={() => onTravelToFishingLake()}
+                      className="px-3 py-2 rounded-lg border border-[#38bdf8]/60 bg-[#0f2f46] hover:bg-[#14405f] text-xs font-bold text-[#9fe8ff] text-left cursor-pointer inline-flex items-center gap-2 transition-colors"
+                    >
+                      <Fish className="w-3.5 h-3.5 shrink-0" />
+                      <span>Crystal Lagoon Pier</span>
+                    </button>
+                  </div>
+                </section>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <section className="rounded-xl bg-[#162438] border border-[#6e8eb0]/35 p-3.5">
+                    <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-[#f6c344] pb-2 border-b border-[#6e8eb0]/20">
+                      <span>Day {hud.dailyObjective.dayNumber} Objective</span>
+                      <span className="tabular-nums">
+                        {hud.dailyObjective.progress}/{hud.dailyObjective.target}
+                      </span>
+                    </div>
+                    <div className="mt-2.5 text-sm font-bold text-[#f4efe6]">
+                      {hud.dailyObjective.title}
+                    </div>
+                    <div className="mt-1 text-xs text-[#9db4cb]">
+                      {hud.dailyObjective.completed
+                        ? 'Objective completed!'
+                        : hud.dailyObjective.failed
+                          ? 'Expired for today.'
+                          : `${Math.ceil(hud.dailyObjective.timeLeft)}s remaining`}
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl bg-[#162438] border border-[#6e8eb0]/35 p-3.5">
+                    <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-[#7be0ff] pb-2 border-b border-[#6e8eb0]/20">
+                      <span>Weather &amp; Hazard</span>
+                      <span className="uppercase">{hud.zoneWeatherEffect.severity}</span>
+                    </div>
+                    <div className="mt-2.5 text-sm font-bold text-[#f4efe6]">
+                      {hud.zoneWeatherEffect.name} ({weatherProfile.label})
+                    </div>
+                    <div className="mt-1 text-xs text-[#9db4cb] tabular-nums">
+                      Wind Resist {hud.zoneWeatherEffect.windResistancePct}/{hud.zoneWeatherEffect.requiredWindResistancePct}% · Heat {hud.zoneWeatherEffect.heatRetentionPct}/{hud.zoneWeatherEffect.requiredHeatRetentionPct}%
+                    </div>
+                  </section>
+                </div>
+
+                <section className="rounded-xl bg-[#162438] border border-[#6e8eb0]/35 p-3.5">
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#6e8eb0]/20">
+                    <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-[#e2eefb]">
+                      <MessageSquare className="w-3.5 h-3.5 text-[#7be0ff]" />
+                      <span>Activity &amp; Loot Log ({hud.chatLogs.length})</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(['all', 'loot', 'combat', 'notification'] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setChatFilter(tab)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase cursor-pointer ${
+                            chatFilter === tab
+                              ? 'bg-[#d98a2b] text-[#131d2b]'
+                              : 'bg-[#101c2d] text-[#9db4cb] hover:text-white'
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-2 max-h-44 overflow-y-auto space-y-1 text-xs">
+                    {hud.chatLogs
+                      .filter((e) =>
+                        chatFilter === 'all'
+                          ? true
+                          : chatFilter === 'loot'
+                            ? e.category === 'drop' || e.category === 'loot'
+                            : e.category === chatFilter,
+                      )
+                      .slice(-20)
+                      .reverse()
+                      .map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-start gap-2 rounded bg-[#101c2d] px-2 py-1 border border-[#6e8eb0]/15"
+                        >
+                          <span className="font-mono text-[10px] text-[#7f97b0] shrink-0">
+                            {entry.timestamp}
+                          </span>
+                          <span className="text-[#dce6f2]">{entry.text}</span>
+                        </div>
+                      ))}
+                    {hud.chatLogs.length === 0 && (
+                      <div className="text-xs text-[#7f97b0] italic py-2">
+                        No activity logged yet.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
             )}
+
+            {drawerTab === 'settings' && (
+              <div data-testid="settings-tab-panel" className="flex flex-col gap-4">
+                <SettingsPanel
+                  settings={hud.settings}
+                  onUpdateSettings={onUpdateSettings}
+                  onResetSettings={onResetSettings}
+                />
+              </div>
+            )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -4832,11 +6401,26 @@ export function GameHud({
 
             {/* Mobile Action Buttons Cluster */}
             <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="Toggle Bow Auto-Attack"
+                  onClick={onToggleBowAutoAttack}
+                  className={`h-8 px-2 rounded-lg border text-[10px] font-bold flex items-center gap-1 shadow-[0_4px_12px_rgba(8,14,24,0.55)] ${
+                    hud.bowAutoAttack
+                      ? 'bg-[#4f3214]/95 border-[#f6c344]/80 text-[#fde68a]'
+                      : 'bg-[#172335]/95 border-[#455c78]/60 text-[#8ca3ba]'
+                  }`}
+                >
+                  <Crosshair className="w-3 h-3" />
+                  Auto-Bow
+                </button>
+              </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => onOpenTab('city')}
-                  className="h-10 px-3 rounded-xl bg-[#2c2214]/95 active:bg-[#f6c344] border border-[#f6c344]/65 text-xs font-bold text-[#fde68a] active:text-[#131d2b] flex items-center gap-1.5 shadow-[0_6px_16px_rgba(8,14,24,0.55)]"
+                  className="h-10 px-2.5 rounded-xl bg-[#2c2214]/95 active:bg-[#f6c344] border border-[#f6c344]/65 text-xs font-bold text-[#fde68a] active:text-[#131d2b] flex items-center gap-1 shadow-[0_6px_16px_rgba(8,14,24,0.55)]"
                 >
                   <Store className="w-4 h-4" />
                   Bazaar
@@ -4844,7 +6428,7 @@ export function GameHud({
                 <button
                   type="button"
                   onClick={onTouchInteract}
-                  className="h-10 px-3 rounded-xl bg-[#17364d]/95 active:bg-[#5be7ff] border border-[#7be0ff]/75 text-xs font-bold text-[#c9f4ff] active:text-[#102030] flex items-center gap-1 shadow-[0_6px_16px_rgba(8,14,24,0.55)]"
+                  className="h-10 px-2.5 rounded-xl bg-[#17364d]/95 active:bg-[#5be7ff] border border-[#7be0ff]/75 text-xs font-bold text-[#c9f4ff] active:text-[#102030] flex items-center gap-1 shadow-[0_6px_16px_rgba(8,14,24,0.55)]"
                 >
                   [E] Act
                 </button>
@@ -4870,34 +6454,36 @@ export function GameHud({
           </div>
         )}
 
-        {/* Unified Bottom Dock */}
-        <div className="pointer-events-auto flex flex-col items-center w-full">
-          <button
-            type="button"
-            tabIndex={-1}
-            onClick={(e) => {
-              e.currentTarget.blur();
-              setDockCollapsed((prev) => !prev);
-            }}
-            className="px-3 py-0.5 rounded-t-md bg-[#121f31]/94 border border-b-0 border-[#6e8eb0]/45 text-[10px] font-bold uppercase tracking-wider text-[#b6cbe0] hover:text-white flex items-center gap-1 cursor-pointer"
-          >
-            {dockCollapsed ? (
-              <>
-                <ChevronUp className="w-3 h-3" /> Show Controls
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-3 h-3" /> Hide Controls
-              </>
-            )}
-          </button>
+        {/* Bottom Dock — Ultra-Clean Action Bar + 1 Unified Menu Trigger */}
+        <div className="pointer-events-auto flex flex-col items-center w-full shrink-0 gap-1">
+          {!isMinimalHud && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setDockCollapsed((prev) => !prev);
+              }}
+              className="hud-plaque border-b-0 px-3 py-0.5 rounded-t-md text-[10px] font-bold uppercase tracking-wider text-[#b6cbe0] hover:text-white flex items-center gap-1 cursor-pointer"
+            >
+              {dockCollapsed ? (
+                <>
+                  <ChevronUp className="w-3 h-3" /> Show Menu Bar
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3 h-3" /> Hide Menu Bar
+                </>
+              )}
+            </button>
+          )}
 
-          {!dockCollapsed && (
+          {!drawerOpen && (isMinimalHud || !dockCollapsed) && (
             <div
               data-testid="controls-dock"
-              className="w-fit max-w-full overflow-x-auto sm:overflow-visible overscroll-x-contain touch-pan-x rounded-xl bg-[#121f31]/94 border border-[#6e8eb0]/50 px-2 py-1.5 shadow-[0_8px_24px_rgba(8,14,24,0.6)]"
+              className="w-fit max-w-[96vw] rounded-xl hud-plaque px-2.5 py-1.5"
             >
-              <div className="mx-auto flex w-max sm:w-auto flex-nowrap sm:flex-wrap sm:justify-center items-center gap-1 sm:gap-1.5">
+              <div className="mx-auto flex flex-wrap justify-center items-center gap-1.5">
                 <button
                   type="button"
                   tabIndex={-1}
@@ -4905,14 +6491,14 @@ export function GameHud({
                     e.currentTarget.blur();
                     onSelectTool('axe');
                   }}
-                  className={`shrink-0 px-2 sm:px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors ${
+                  className={`shrink-0 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors ${
                     hud.activeTool === 'axe'
-                      ? 'bg-[#d98a2b] border-[#f7d88b] text-[#131d2b]'
-                      : 'bg-[#1f314b] border-[#516d8c]/50 text-[#dce6f2] hover:bg-[#294060]'
+                      ? 'hud-keycap-active'
+                      : 'hud-keycap text-[#dce6f2]'
                   }`}
                 >
-                  <AxeIcon className="w-4 h-4" />
-                  <span>[1] {axeSpec.name}</span>
+                  <AxeIcon className="w-3.5 h-3.5" />
+                  <span>[1] {isMinimalHud ? 'Hatchet' : axeSpec.name}</span>
                 </button>
 
                 <button
@@ -4922,14 +6508,32 @@ export function GameHud({
                     e.currentTarget.blur();
                     onSelectTool('bow');
                   }}
-                  className={`shrink-0 px-2 sm:px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors ${
+                  className={`shrink-0 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors ${
                     hud.activeTool === 'bow'
-                      ? 'bg-[#d98a2b] border-[#f7d88b] text-[#131d2b]'
-                      : 'bg-[#1f314b] border-[#516d8c]/50 text-[#dce6f2] hover:bg-[#294060]'
+                      ? 'hud-keycap-active'
+                      : 'hud-keycap text-[#dce6f2]'
                   }`}
                 >
-                  <BowIcon className="w-4 h-4" />
-                  <span>[2] {bowSpec.name}</span>
+                  <BowIcon className="w-3.5 h-3.5" />
+                  <span>[2] {isMinimalHud ? 'Bow' : bowSpec.name}</span>
+                </button>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="select-rod-button"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    onSelectTool('rod');
+                  }}
+                  className={`shrink-0 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors ${
+                    hud.activeTool === 'rod'
+                      ? 'hud-keycap-active'
+                      : 'hud-keycap text-[#7be0ff]'
+                  }`}
+                >
+                  <Fish className="w-3.5 h-3.5" />
+                  <span>[3] {isMinimalHud ? 'Rod' : 'Glacial Rod'}</span>
                 </button>
 
                 <button
@@ -4941,67 +6545,22 @@ export function GameHud({
                     e.currentTarget.blur();
                     onActivateHuntersSight();
                   }}
-                  className={`shrink-0 px-2 sm:px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 text-xs font-bold tabular-nums transition-colors ${
+                  className={`shrink-0 px-2.5 py-1 rounded-lg border flex items-center gap-1 text-xs font-bold tabular-nums transition-colors ${
                     hud.huntersSight.active
-                      ? 'bg-[#12455e] border-[#7be0ff] text-[#c9f4ff] cursor-default'
+                      ? 'bg-gradient-to-b from-[#175573] to-[#0f3b52] border-[#7be0ff] text-[#c9f4ff] cursor-default'
                       : hud.huntersSight.cooldownLeft > 0
-                        ? 'bg-[#1b2a3f] border-[#455c78]/45 text-[#7f96ad] cursor-not-allowed'
-                        : 'bg-[#17364d] hover:bg-[#214b6b] border-[#5be7ff]/75 text-[#9fe8ff] cursor-pointer'
+                        ? 'bg-[#172335] border-[#455c78]/45 text-[#7f96ad] cursor-not-allowed'
+                        : 'bg-gradient-to-b from-[#1b415c] to-[#132e42] hover:brightness-110 border-[#5be7ff]/70 text-[#9fe8ff] cursor-pointer'
                   }`}
                 >
-                  <Eye className="w-4 h-4 shrink-0" />
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     {hud.huntersSight.active
-                      ? `Sight ${Math.ceil(hud.huntersSight.timeLeft)}s`
+                      ? `${Math.ceil(hud.huntersSight.timeLeft)}s`
                       : hud.huntersSight.cooldownLeft > 0
-                        ? `Sight CD ${Math.ceil(hud.huntersSight.cooldownLeft)}s`
+                        ? `${Math.ceil(hud.huntersSight.cooldownLeft)}s`
                         : '[Q] Sight'}
                   </span>
-                </button>
-
-                <div className="h-5 w-px bg-[#6e8eb0]/30 mx-0.5 shrink-0 hidden sm:block" />
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  disabled={cargoGold <= 0}
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onSellAll();
-                  }}
-                  className={`shrink-0 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-bold tabular-nums transition-colors ${
-                    cargoGold > 0
-                      ? 'bg-[#223854] hover:bg-[#2d4a6e] border-[#f6c344]/60 text-[#f6c344] cursor-pointer'
-                      : 'bg-[#1b2a3f] border-[#455c78]/40 text-[#6e849c] cursor-not-allowed'
-                  }`}
-                >
-                  Sell Cargo (+{cargoGold}g)
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-city-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('city');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2c2214] hover:bg-[#3d2f1b] border border-[#f6c344]/70 text-xs font-bold text-[#fde68a] cursor-pointer transition-colors inline-flex items-center gap-1.5"
-                >
-                  <Store className="w-3.5 h-3.5 text-[#f6c344]" />
-                  [T] City Bazaar
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('camp');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#8fb5d9]/50 text-xs font-bold text-[#f4efe6] cursor-pointer transition-colors"
-                >
-                  [U] Base
                 </button>
 
                 {(hud.backpackInventory.snare_trap ?? 0) > 0 && (
@@ -5013,9 +6572,9 @@ export function GameHud({
                       e.currentTarget.blur();
                       onUseBackpackItem('snare_trap');
                     }}
-                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#1c382c] hover:bg-[#254b3b] border border-[#8ed49a]/70 text-xs font-bold tabular-nums text-[#a7f3d0] cursor-pointer transition-colors"
+                    className="shrink-0 px-2 py-1 rounded-lg bg-gradient-to-b from-[#214233] to-[#172f24] hover:brightness-110 border border-[#8ed49a]/70 text-xs font-bold tabular-nums text-[#a7f3d0] cursor-pointer transition-colors"
                   >
-                    [3] Snare ({hud.backpackInventory.snare_trap})
+                    Snare ({hud.backpackInventory.snare_trap})
                   </button>
                 )}
 
@@ -5028,119 +6587,56 @@ export function GameHud({
                       e.currentTarget.blur();
                       onUseBackpackItem('frost_trap');
                     }}
-                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#153447] hover:bg-[#1e4963] border border-[#7be0ff]/75 text-xs font-bold tabular-nums text-[#9fe8ff] cursor-pointer transition-colors"
+                    className="shrink-0 px-2 py-1 rounded-lg bg-gradient-to-b from-[#183e54] to-[#112c3d] hover:brightness-110 border border-[#7be0ff]/75 text-xs font-bold tabular-nums text-[#9fe8ff] cursor-pointer transition-colors"
                   >
-                    [4] Frost Trap ({hud.backpackInventory.frost_trap})
+                    Frost ({hud.backpackInventory.frost_trap})
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-craft-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('craft');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#f6c344]/50 text-xs font-bold text-[#f6c344] cursor-pointer transition-colors inline-flex items-center gap-1.5 tabular-nums"
-                >
-                  <Wrench className="w-3.5 h-3.5" />
-                  [C] Station T{hud.gearBonuses.setTier}
-                </button>
+                {cargoGold > 0 && (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      onSellAll();
+                    }}
+                    className="shrink-0 px-2.5 py-1 rounded-lg bg-gradient-to-b from-[#2b4568] to-[#1c304a] hover:brightness-110 border border-[#f6c344]/65 text-xs font-bold tabular-nums text-[#f6c344] cursor-pointer transition-colors"
+                  >
+                    Sell +{cargoGold}g
+                  </button>
+                )}
+
+                <div className="h-5 w-px bg-[#78a0c8]/30 mx-0.5 shrink-0" />
 
                 <button
                   type="button"
                   tabIndex={-1}
-                  data-testid="open-inventory-button"
+                  data-testid="open-unified-menu-btn"
                   onClick={(e) => {
                     e.currentTarget.blur();
-                    onOpenTab('inventory');
+                    onToggleDrawer();
                   }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#8ed49a]/60 text-xs font-bold text-[#a7f3d0] cursor-pointer transition-colors inline-flex items-center gap-1.5 tabular-nums"
-                >
-                  <Backpack className="w-3.5 h-3.5" />
-                  [I] Pack ({hud.backpackUsedSlots})
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('festival');
-                  }}
-                  className={`shrink-0 hidden sm:inline-flex px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-colors items-center gap-1.5 ${
-                    hud.seasonalEvent.active
-                      ? 'bg-[#1c3d5e] hover:bg-[#25507a] border-[#7be0ff]/75 text-[#9fe8ff]'
-                      : 'bg-[#2a4566] hover:bg-[#355680] border-[#8fb5d9]/50 text-[#dce6f2]'
+                  className={`shrink-0 px-3 py-1 rounded-lg border flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-colors ${
+                    drawerOpen
+                      ? 'bg-[#f6c344] border-[#fff0b8] text-[#131d2b]'
+                      : 'bg-gradient-to-b from-[#1f344f] to-[#142337] hover:brightness-110 border-[#7fa4c8]/60 text-[#f4efe6]'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  [F] Festival
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-bestiary-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('bestiary');
-                  }}
-                  className="shrink-0 hidden sm:inline-flex px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#8fb5d9]/50 text-xs font-bold text-[#f4efe6] cursor-pointer transition-colors items-center gap-1.5 tabular-nums"
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-[#f6c344]" />
-                  [B] Bestiary ({discoveredCount}/{totalSpeciesCount})
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-pets-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('pets');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a2234] hover:bg-[#3a2d47] border border-[#f472b6]/60 text-xs font-bold text-[#fbcfe8] cursor-pointer transition-colors inline-flex items-center gap-1.5 tabular-nums"
-                >
-                  <PawPrint className="w-3.5 h-3.5 text-[#f472b6]" />
-                  [J] Pets ({hud.pets.tamedPets.length})
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-achievements-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('achievements');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#f6c344]/55 text-xs font-bold text-[#fde68a] cursor-pointer transition-colors inline-flex items-center gap-1.5 tabular-nums"
-                >
-                  <Trophy className="w-3.5 h-3.5 text-[#f6c344]" />
-                  [L] Badges ({hud.achievementsUnlockedCount}/{hud.achievements.length})
-                </button>
-
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-testid="open-skills-button"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onOpenTab('skills');
-                  }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#2a4566] hover:bg-[#355680] border border-[#8ed49a]/55 text-xs font-bold text-[#f4efe6] cursor-pointer transition-colors inline-flex items-center gap-1.5 tabular-nums"
-                >
-                  <Award className="w-3.5 h-3.5 text-[#8ed49a]" />
-                  [K] Skills
-                  {totalSkillPoints > 0 && (
-                    <span className="px-1.5 py-0.2 rounded bg-[#8ed49a] text-[#0f1d17] text-[10px] font-extrabold">
-                      +{totalSkillPoints}
-                    </span>
+                  <Menu className="w-3.5 h-3.5" />
+                  <span>[Tab] Menu</span>
+                  {(hud.dailyLogin.canClaimToday || totalSkillPoints > 0) && (
+                    <span className="w-2 h-2 rounded-full bg-[#f6c344]" />
                   )}
                 </button>
               </div>
             </div>
+          )}
+
+          {isMinimalHud && hud.settings.showControlsHint && !drawerOpen && (
+            <p className="text-[11px] font-semibold text-[#dce6f2] hud-text-stroke text-center">
+              WASD Move · Space/Click Use Tool · E Interact · Tab Menu · Esc Pause
+            </p>
           )}
         </div>
       </div>

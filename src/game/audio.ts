@@ -1,4 +1,4 @@
-import type { AnimalKind, GamePhase, ZoneBossId } from './types';
+import type { AnimalKind, GamePhase, ZoneBossId, ZoneId } from './types';
 
 export interface SpeciesAttackSoundProfile {
   wave: OscillatorType;
@@ -19,6 +19,51 @@ export function getSpeciesAttackSoundProfile(
   kind: AnimalKind,
 ): SpeciesAttackSoundProfile {
   switch (kind) {
+    case 'snow_owl':
+      return {
+        wave: 'triangle',
+        windupStartHz: 520,
+        windupPeakHz: 780,
+        windupEndHz: 440,
+        windupDuration: 0.28,
+        windupGain: 0.09,
+        attackStartHz: 860,
+        attackEndHz: 340,
+        attackDuration: 0.18,
+        attackGain: 0.13,
+        filterHz: 2200,
+        biteNoiseHz: 2600,
+      };
+    case 'wolverine':
+      return {
+        wave: 'sawtooth',
+        windupStartHz: 165,
+        windupPeakHz: 295,
+        windupEndHz: 120,
+        windupDuration: 0.34,
+        windupGain: 0.14,
+        attackStartHz: 340,
+        attackEndHz: 95,
+        attackDuration: 0.24,
+        attackGain: 0.2,
+        filterHz: 1480,
+        biteNoiseHz: 1850,
+      };
+    case 'frost_boar':
+      return {
+        wave: 'sawtooth',
+        windupStartHz: 95,
+        windupPeakHz: 168,
+        windupEndHz: 74,
+        windupDuration: 0.44,
+        windupGain: 0.15,
+        attackStartHz: 210,
+        attackEndHz: 58,
+        attackDuration: 0.3,
+        attackGain: 0.22,
+        filterHz: 920,
+        biteNoiseHz: 840,
+      };
     case 'lynx':
       return {
         wave: 'sawtooth',
@@ -113,15 +158,128 @@ export function getSpeciesAttackSoundProfile(
   }
 }
 
+export interface BiomeAudioProfile {
+  zone: ZoneId;
+  label: string;
+  rustleBaseHz: number;
+  rustleScale: number;
+  windBaseHz: number;
+  windScale: number;
+  whistleBaseHz: number;
+  whistleQ: number;
+  whistleScale: number;
+  rumbleBaseHz: number;
+  rumbleScale: number;
+  callIntervalSec: number;
+}
+
+const BIOME_AUDIO_PROFILES: Record<ZoneId, BiomeAudioProfile> = {
+  level1: {
+    zone: 'level1',
+    label: 'Whispering Pine Woods',
+    rustleBaseHz: 1380,
+    rustleScale: 1.15,
+    windBaseHz: 245,
+    windScale: 1.0,
+    whistleBaseHz: 585,
+    whistleQ: 4.2,
+    whistleScale: 1.0,
+    rumbleBaseHz: 110,
+    rumbleScale: 0.85,
+    callIntervalSec: 13,
+  },
+  level2: {
+    zone: 'level2',
+    label: 'Glacial Highlands Ridge',
+    rustleBaseHz: 1560,
+    rustleScale: 0.9,
+    windBaseHz: 310,
+    windScale: 1.25,
+    whistleBaseHz: 740,
+    whistleQ: 5.4,
+    whistleScale: 1.35,
+    rumbleBaseHz: 105,
+    rumbleScale: 1.1,
+    callIntervalSec: 15,
+  },
+  level3: {
+    zone: 'level3',
+    label: 'Rimefang Abyssal Trench',
+    rustleBaseHz: 1120,
+    rustleScale: 0.78,
+    windBaseHz: 195,
+    windScale: 1.18,
+    whistleBaseHz: 460,
+    whistleQ: 4.8,
+    whistleScale: 1.15,
+    rumbleBaseHz: 82,
+    rumbleScale: 1.45,
+    callIntervalSec: 16,
+  },
+  level4: {
+    zone: 'level4',
+    label: 'Obsidian Permafrost Caldera',
+    rustleBaseHz: 1680,
+    rustleScale: 1.05,
+    windBaseHz: 265,
+    windScale: 1.3,
+    whistleBaseHz: 660,
+    whistleQ: 4.6,
+    whistleScale: 1.25,
+    rumbleBaseHz: 74,
+    rumbleScale: 1.6,
+    callIntervalSec: 17,
+  },
+  level5: {
+    zone: 'level5',
+    label: 'Starfall Eternal Zero',
+    rustleBaseHz: 1850,
+    rustleScale: 0.95,
+    windBaseHz: 340,
+    windScale: 1.35,
+    whistleBaseHz: 880,
+    whistleQ: 6.2,
+    whistleScale: 1.45,
+    rumbleBaseHz: 92,
+    rumbleScale: 1.35,
+    callIntervalSec: 18,
+  },
+  city: {
+    zone: 'city',
+    label: 'Frostcave Geothermal Sanctuary',
+    rustleBaseHz: 920,
+    rustleScale: 0.45,
+    windBaseHz: 165,
+    windScale: 0.35,
+    whistleBaseHz: 390,
+    whistleQ: 2.8,
+    whistleScale: 0.25,
+    rumbleBaseHz: 68,
+    rumbleScale: 0.95,
+    callIntervalSec: 28,
+  },
+};
+
+export function getBiomeAudioProfile(zone: ZoneId = 'level1'): BiomeAudioProfile {
+  return BIOME_AUDIO_PROFILES[zone] ?? BIOME_AUDIO_PROFILES.level1;
+}
+
 export interface WeatherAmbientMix {
   rustleGain: number;
+  rustleFilterHz: number;
   windGain: number;
   rumbleGain: number;
+  rumbleFilterHz: number;
   windFilterHz: number;
   windQ: number;
+  whistleGain: number;
+  whistleFilterHz: number;
+  whistleQ: number;
+  whistlePan: number;
   weatherPan: number;
   campfireGain: number;
   campfirePan: number;
+  wildlifeCallIntervalSec: number;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -157,25 +315,48 @@ export function computeWeatherAmbientMix(params: {
   playerZ: number;
   time: number;
   nearCampfire: boolean;
+  zone?: ZoneId;
+  timeOfDay?: number;
 }): WeatherAmbientMix {
   const w = clamp(params.weatherIntensity, 0, 1);
   const g = clamp(params.gustIntensity, 0, 1);
+  const biome = getBiomeAudioProfile(params.zone ?? 'level1');
 
   // Soft pine & snowfall rustling: silky hush in clear, warm rustle in light snow, layered under blizzard
   const lightSnowBell = Math.sin(clamp(w, 0, 1) * Math.PI * 0.85);
-  const rustleGain = 0.01 + lightSnowBell * 0.048 + g * 0.022;
+  const rustleGain =
+    (0.011 + lightSnowBell * 0.048 + g * 0.024) * biome.rustleScale;
+  const rustleFilterHz =
+    biome.rustleBaseHz + Math.sin(params.time * 0.42) * 110 + g * 180;
 
-  // Smooth slow breathing swells for blizzard wind (gentle dual-sine modulation, no harsh pulsing)
+  // Smooth slow breathing swells for blizzard wind
   const howlPulse =
     0.88 + 0.08 * Math.sin(params.time * 0.34) + 0.04 * Math.sin(params.time * 0.19 + 1.1);
-  const windGain = (0.005 + Math.pow(g, 1.45) * 0.16) * howlPulse;
-  const rumbleGain = 0.004 + Math.pow(g, 1.55) * 0.095 * howlPulse;
+  const windGain = (0.006 + Math.pow(g, 1.42) * 0.155) * howlPulse * biome.windScale;
+  const rumbleGain =
+    (0.004 + Math.pow(g, 1.52) * 0.092 * howlPulse) * biome.rumbleScale;
   const filterWave =
     Math.sin(params.time * 0.27) * 58 + Math.sin(params.time * 0.15 + 0.8) * 32;
-  const windFilterHz = 230 + w * 110 + g * (290 + filterWave);
-  // Keep filter Q moderate so wind sounds airy and natural without sharp whistling
-  const windQ = 0.85 + g * 1.5;
-  const weatherPan = Math.sin(params.time * 0.18) * (0.1 + g * 0.32);
+  const windFilterHz = biome.windBaseHz + w * 105 + g * (280 + filterWave);
+  const windQ = 0.88 + g * 1.45;
+  const weatherPan = Math.sin(params.time * 0.18) * (0.12 + g * 0.34);
+
+  // Woodland & ridge wind whistling layer: organic resonant air whistling through pine needles & ice spires
+  const whistleSweep =
+    Math.sin(params.time * 0.52) * 85 + Math.cos(params.time * 0.31 + 0.6) * 55;
+  const whistleEnvelope = Math.max(
+    0,
+    0.22 + 0.55 * Math.sin(params.time * 0.41 + 0.4) + 0.23 * Math.cos(params.time * 0.73),
+  );
+  const whistleGain =
+    (0.0035 + (0.012 + g * 0.036 + w * 0.014) * whistleEnvelope) * biome.whistleScale;
+  const whistleFilterHz = clamp(
+    biome.whistleBaseHz + g * 240 + whistleSweep,
+    260,
+    1450,
+  );
+  const whistleQ = biome.whistleQ + g * 1.8;
+  const whistlePan = Math.cos(params.time * 0.29 + 0.5) * (0.28 + g * 0.35);
 
   // Spatial campfire crackle around the hearth
   const baseFire = computeSpatialDistanceGain(params.campDist, 18);
@@ -187,15 +368,30 @@ export function computeWeatherAmbientMix(params: {
     params.campZ,
   );
 
+  // Dusk/night increases nocturnal owl & wolf calls slightly
+  const tod = params.timeOfDay ?? 0.35;
+  const isNightOrDusk = tod < 0.22 || tod > 0.74;
+  const wildlifeCallIntervalSec = Math.max(
+    7,
+    biome.callIntervalSec * (isNightOrDusk ? 0.82 : 1.0) * (w > 0.7 ? 1.25 : 1.0),
+  );
+
   return {
     rustleGain,
+    rustleFilterHz,
     windGain,
     rumbleGain,
+    rumbleFilterHz: biome.rumbleBaseHz,
     windFilterHz,
     windQ,
+    whistleGain,
+    whistleFilterHz,
+    whistleQ,
+    whistlePan,
     weatherPan,
     campfireGain,
     campfirePan,
+    wildlifeCallIntervalSec,
   };
 }
 
@@ -251,6 +447,7 @@ function createSeamlessWarmNoiseBuffer(
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private muted = false;
+  private masterVolume = 0.75;
 
   private masterGain: GainNode | null = null;
   private ambientInit = false;
@@ -265,6 +462,9 @@ export class AudioManager {
   private windSmoothFilter: BiquadFilterNode | null = null;
   private windGainNode: GainNode | null = null;
   private windPanner: StereoPannerNode | null = null;
+  private whistleFilter: BiquadFilterNode | null = null;
+  private whistleGainNode: GainNode | null = null;
+  private whistlePanner: StereoPannerNode | null = null;
   private rumbleFilter: BiquadFilterNode | null = null;
   private rumbleGainNode: GainNode | null = null;
 
@@ -279,6 +479,19 @@ export class AudioManager {
     return this.muted;
   }
 
+  public getMasterVolume(): number {
+    return this.masterVolume;
+  }
+
+  public setMasterVolume(volume: number): void {
+    const next = clamp(volume, 0, 1);
+    this.masterVolume = next;
+    if (this.ctx && this.masterGain) {
+      const now = this.ctx.currentTime;
+      this.masterGain.gain.setTargetAtTime(this.muted ? 0 : next, now, 0.08);
+    }
+  }
+
   public setMuted(next: boolean): void {
     this.muted = next;
     if (!next && !this.ctx) {
@@ -286,7 +499,7 @@ export class AudioManager {
     }
     if (this.ctx && this.masterGain) {
       const now = this.ctx.currentTime;
-      this.masterGain.gain.setTargetAtTime(next ? 0 : 1, now, 0.12);
+      this.masterGain.gain.setTargetAtTime(next ? 0 : this.masterVolume, now, 0.12);
     }
   }
 
@@ -308,7 +521,7 @@ export class AudioManager {
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this.muted ? 0 : 1;
+      this.masterGain.gain.value = this.muted ? 0 : this.masterVolume;
       this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
@@ -370,7 +583,21 @@ export class AudioManager {
       .connect(this.windPanner)
       .connect(dest);
 
-    // 2b. Deep velvety storm wind rumble
+    // 2b. Woodland & canyon wind whistling layer (resonant pine-needle & ridge whistle)
+    this.whistleFilter = ctx.createBiquadFilter();
+    this.whistleFilter.type = 'bandpass';
+    this.whistleFilter.frequency.value = 585;
+    this.whistleFilter.Q.value = 4.5;
+    this.whistleGainNode = ctx.createGain();
+    this.whistleGainNode.gain.value = 0;
+    this.whistlePanner = ctx.createStereoPanner();
+    windSrc
+      .connect(this.whistleFilter)
+      .connect(this.whistleGainNode)
+      .connect(this.whistlePanner)
+      .connect(dest);
+
+    // 2c. Deep velvety storm wind rumble
     this.rumbleFilter = ctx.createBiquadFilter();
     this.rumbleFilter.type = 'lowpass';
     this.rumbleFilter.frequency.value = 115;
@@ -405,6 +632,8 @@ export class AudioManager {
     gustIntensity: number;
     time: number;
     nearCampfire: boolean;
+    zone?: ZoneId;
+    timeOfDay?: number;
   }): void {
     this.listenerX = params.playerX;
     this.listenerZ = params.playerZ;
@@ -415,6 +644,7 @@ export class AudioManager {
     if (this.muted || params.phase === 'paused' || params.phase === 'gameover') {
       this.rustleGainNode?.gain.setTargetAtTime(0, now, 0.25);
       this.windGainNode?.gain.setTargetAtTime(0, now, 0.25);
+      this.whistleGainNode?.gain.setTargetAtTime(0, now, 0.25);
       this.rumbleGainNode?.gain.setTargetAtTime(0, now, 0.25);
       this.fireGainNode?.gain.setTargetAtTime(0, now, 0.2);
       return;
@@ -434,11 +664,14 @@ export class AudioManager {
       playerZ: params.playerZ,
       time: params.time,
       nearCampfire: params.nearCampfire,
+      zone: params.zone,
+      timeOfDay: params.timeOfDay,
     });
 
     const phaseScale = params.phase === 'title' ? 0.42 : 1.0;
 
-    // Generous exponential smoothing constants avoid sudden steps between clear/snow/blizzard
+    // Generous exponential smoothing constants avoid sudden steps between biomes & weather
+    this.rustleFilter?.frequency.setTargetAtTime(mix.rustleFilterHz, now, 0.65);
     this.rustleGainNode?.gain.setTargetAtTime(mix.rustleGain * phaseScale, now, 0.55);
     this.rustlePanner?.pan.setTargetAtTime(-mix.weatherPan * 0.5, now, 0.6);
 
@@ -451,6 +684,13 @@ export class AudioManager {
     );
     this.windGainNode?.gain.setTargetAtTime(mix.windGain * phaseScale, now, 0.55);
     this.windPanner?.pan.setTargetAtTime(mix.weatherPan, now, 0.65);
+
+    this.whistleFilter?.frequency.setTargetAtTime(mix.whistleFilterHz, now, 0.55);
+    this.whistleFilter?.Q.setTargetAtTime(mix.whistleQ, now, 0.55);
+    this.whistleGainNode?.gain.setTargetAtTime(mix.whistleGain * phaseScale, now, 0.5);
+    this.whistlePanner?.pan.setTargetAtTime(mix.whistlePan, now, 0.55);
+
+    this.rumbleFilter?.frequency.setTargetAtTime(mix.rumbleFilterHz, now, 0.7);
     this.rumbleGainNode?.gain.setTargetAtTime(mix.rumbleGain * phaseScale, now, 0.65);
 
     // Gentle organic ember glow for the spatial campfire (slow smooth flicker)
@@ -462,6 +702,110 @@ export class AudioManager {
       0.24,
     );
     this.firePanner?.pan.setTargetAtTime(mix.campfirePan, now, 0.24);
+  }
+
+  public playBiomeWildlifeCall(
+    kind: AnimalKind,
+    worldX?: number,
+    worldZ?: number,
+  ): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.createOutputNode(ctx, worldX, worldZ, 48);
+
+    if (kind === 'snow_owl') {
+      // Haunting hollow woodland owl hoot ("hoo... hoo-hoo")
+      const notes = [
+        { delay: 0, dur: 0.34, f0: 410, f1: 375, gain: 0.085 },
+        { delay: 0.46, dur: 0.18, f0: 425, f1: 395, gain: 0.07 },
+        { delay: 0.68, dur: 0.42, f0: 390, f1: 335, gain: 0.08 },
+      ];
+      for (const n of notes) {
+        const t = now + n.delay;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(this.jitter(n.f0, 0.03), t);
+        osc.frequency.exponentialRampToValueAtTime(n.f1, t + n.dur);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(n.gain, t + 0.045);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + n.dur);
+        osc.connect(g).connect(out);
+        osc.start(t);
+        osc.stop(t + n.dur + 0.02);
+      }
+      return;
+    }
+
+    if (kind === 'wolf' || kind === 'aurora_fenrir') {
+      // Distant mournful wolf howl echoing through the pines
+      const dur = kind === 'aurora_fenrir' ? 1.25 : 0.95;
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      osc.type = 'triangle';
+      const baseHz = this.jitter(kind === 'aurora_fenrir' ? 265 : 310, 0.05);
+      osc.frequency.setValueAtTime(baseHz * 0.78, now);
+      osc.frequency.exponentialRampToValueAtTime(baseHz * 1.32, now + dur * 0.36);
+      osc.frequency.exponentialRampToValueAtTime(baseHz * 0.88, now + dur);
+      filter.type = 'bandpass';
+      filter.frequency.value = baseHz * 1.4;
+      filter.Q.value = 1.8;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.09, now + 0.18);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(filter).connect(g).connect(out);
+      osc.start(now);
+      osc.stop(now + dur + 0.04);
+      return;
+    }
+
+    if (kind === 'stag' || kind === 'frost_stag') {
+      // Resonant woodland elk/stag bugle call
+      const dur = 0.62;
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      osc.type = 'sawtooth';
+      const f0 = kind === 'frost_stag' ? 280 : 240;
+      osc.frequency.setValueAtTime(this.jitter(f0, 0.05), now);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 1.65, now + 0.24);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 0.92, now + dur);
+      filter.type = 'lowpass';
+      filter.frequency.value = 920;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.075, now + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(filter).connect(g).connect(out);
+      osc.start(now);
+      osc.stop(now + dur + 0.03);
+      return;
+    }
+
+    // Default territorial call (fox yip, wolverine rasp, boar grunt, lynx cry)
+    const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    osc.type = kind === 'fox' || kind === 'hare' ? 'triangle' : 'sawtooth';
+    const startHz =
+      kind === 'fox'
+        ? 540
+        : kind === 'wolverine' || kind === 'lynx'
+          ? 320
+          : kind === 'frost_boar' || kind === 'musk_ox'
+            ? 125
+            : 220;
+    osc.frequency.setValueAtTime(this.jitter(startHz, 0.06), now);
+    osc.frequency.exponentialRampToValueAtTime(startHz * 0.62, now + 0.28);
+    filter.type = 'lowpass';
+    filter.frequency.value = 1280;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.07, now + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+    osc.connect(filter).connect(g).connect(out);
+    osc.start(now);
+    osc.stop(now + 0.32);
   }
 
   private createOutputNode(
@@ -556,48 +900,86 @@ export class AudioManager {
     const now = ctx.currentTime;
     const out = this.createOutputNode(ctx, worldX, worldZ);
 
-    // Low wooden thump scaled by axe weight
+    // 1. Deep timber trunk thud scaled by axe weight
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    const startFreq = this.jitter(135 + tier * 12, 0.08);
+    const startFreq = this.jitter(142 + tier * 12, 0.08);
     osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(42, now + 0.13);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.14);
 
-    gain.gain.setValueAtTime(0.26, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
 
     osc.connect(gain).connect(out);
     osc.start(now);
-    osc.stop(now + 0.15);
+    osc.stop(now + 0.16);
 
-    // Crisp bark split snap
+    // 2. Hollow heartwood resonance knock
+    const knock = ctx.createOscillator();
+    const knockGain = ctx.createGain();
+    knock.type = 'sine';
+    const knockFreq = this.jitter(295 + tier * 18, 0.07);
+    knock.frequency.setValueAtTime(knockFreq, now + 0.008);
+    knock.frequency.exponentialRampToValueAtTime(165, now + 0.095);
+    knockGain.gain.setValueAtTime(0.14, now + 0.008);
+    knockGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.1);
+    knock.connect(knockGain).connect(out);
+    knock.start(now + 0.008);
+    knock.stop(now + 0.11);
+
+    // 3. Crisp bark split & wood fiber snap
     const crack = ctx.createOscillator();
     const crackGain = ctx.createGain();
     crack.type = 'sawtooth';
-    crack.frequency.setValueAtTime(this.jitter(560 + tier * 35, 0.1), now);
-    crack.frequency.exponentialRampToValueAtTime(145, now + 0.065);
-    crackGain.gain.setValueAtTime(0.11, now);
-    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    crack.frequency.setValueAtTime(this.jitter(590 + tier * 38, 0.1), now);
+    crack.frequency.exponentialRampToValueAtTime(140, now + 0.07);
+    crackGain.gain.setValueAtTime(0.12, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
     crack.connect(crackGain).connect(out);
     crack.start(now);
-    crack.stop(now + 0.075);
+    crack.stop(now + 0.08);
 
-    // Wood-chip noise burst
+    // 4. Wood-chip scatter burst
     const buf =
       this.noiseSource?.buffer ?? createSeamlessWarmNoiseBuffer(ctx, 0.25, 0.5);
     const chipSrc = ctx.createBufferSource();
     chipSrc.buffer = buf;
     const chipFilter = ctx.createBiquadFilter();
     chipFilter.type = 'bandpass';
-    chipFilter.frequency.value = this.jitter(1150, 0.12);
+    chipFilter.frequency.value = this.jitter(1220, 0.12);
     chipFilter.Q.value = 1.8;
     const chipGain = ctx.createGain();
-    chipGain.gain.setValueAtTime(0.08, now);
-    chipGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+    chipGain.gain.setValueAtTime(0.095, now);
+    chipGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
     chipSrc.connect(chipFilter).connect(chipGain).connect(out);
     chipSrc.start(now, Math.random() * Math.max(0.01, buf.duration - 0.08));
-    chipSrc.stop(now + 0.07);
+    chipSrc.stop(now + 0.075);
+  }
+
+  public playBowDraw(tier = 1): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.masterGain ?? ctx.destination;
+
+    // Tactile yew-limb & sinew bowstring tension creak
+    const creak = ctx.createOscillator();
+    const creakGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    creak.type = 'triangle';
+    const f0 = this.jitter(145 + tier * 10, 0.06);
+    creak.frequency.setValueAtTime(f0, now);
+    creak.frequency.linearRampToValueAtTime(f0 * 1.52, now + 0.12);
+    filter.type = 'bandpass';
+    filter.frequency.value = 460;
+    filter.Q.value = 2.0;
+    creakGain.gain.setValueAtTime(0.0001, now);
+    creakGain.gain.linearRampToValueAtTime(0.065, now + 0.035);
+    creakGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    creak.connect(filter).connect(creakGain).connect(out);
+    creak.start(now);
+    creak.stop(now + 0.15);
   }
 
   public playTreeFall(worldX?: number, worldZ?: number): void {

@@ -160,10 +160,15 @@ test('wildlife activity increases nocturnal predator speed & perception while sl
       Math.hypot(hareDayMove.vx, hareDayMove.vz),
   );
 
-  // At night, wolf/lynx packs can spawn above baseline daytime pack size
-  const baseCounts = { hare: 6, fox: 5, stag: 5, wolf: 4, lynx: 2 };
+  // At night, nocturnal species (wolf/lynx/snow_owl/wolverine) can spawn above baseline daytime pack size
+  const baseCounts = { hare: 6, fox: 5, stag: 5, wolf: 4, lynx: 2, snow_owl: 2, wolverine: 1 };
   const nightSpawn = pickDynamicWildlifeSpawn(baseCounts, () => 0.99, 0.0);
-  assert.ok(nightSpawn === 'wolf' || nightSpawn === 'lynx');
+  assert.ok(
+    nightSpawn === 'wolf' ||
+      nightSpawn === 'lynx' ||
+      nightSpawn === 'snow_owl' ||
+      nightSpawn === 'wolverine',
+  );
 
   const nightHud = buildDayNightState(0.0, 2);
   assert.equal(nightHud.phase, 'night');

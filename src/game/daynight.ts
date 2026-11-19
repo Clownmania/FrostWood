@@ -28,6 +28,7 @@ export interface EnvironmentLightingSample {
   exposure: number;
   campfireGlowMult: number;
   nightFactor: number;
+  twilightFactor: number;
   predatorEyeEmissive: number;
 }
 
@@ -125,8 +126,8 @@ export function computeNightFactor(timeOfDay: number): number {
   const t = normalizeTimeOfDay(timeOfDay);
   // Sun height sine: +1 at noon, 0 at 06:00 & 18:00, -1 at midnight
   const sunSin = Math.sin((t - 0.25) * Math.PI * 2);
-  // Transition cleanly between sunSin = +0.18 (bright day) and -0.22 (deep night)
-  return THREE.MathUtils.clamp((0.18 - sunSin) / 0.4, 0, 1);
+  // Delay deep Arctic night onset until sun drops below horizon (-0.02 -> -0.28) so sunset glows amber-gold
+  return THREE.MathUtils.clamp((-0.02 - sunSin) / 0.26, 0, 1);
 }
 
 export function computeTwilightFactor(timeOfDay: number): number {
@@ -158,31 +159,31 @@ export function computeWildlifeTimeProfile(
     };
   }
 
-  if (kind === 'fox') {
-    // Crepuscular hunter: liveliest at dawn and dusk
+  if (kind === 'fox' || kind === 'snow_owl') {
+    // Crepuscular / nocturnal avian & curious hunter: liveliest at dawn, dusk, and twilight
     return {
-      speedScale: 0.98 + twilight * 0.2 - night * 0.08,
+      speedScale: 0.98 + twilight * 0.22 + night * 0.06,
       stalkSpeedScale: 1,
-      detectRadiusScale: 0.96 + twilight * 0.18 - night * 0.06,
+      detectRadiusScale: 0.96 + twilight * 0.18 + night * 0.08,
       spookRadiusScale: 1.0 + twilight * 0.1,
       windupScale: 1,
-      spawnWeightScale: 1.0 + twilight * 0.25,
+      spawnWeightScale: 1.0 + twilight * 0.25 + night * 0.15,
     };
   }
 
-  if (kind === 'mammoth') {
-    // Colossal tundra titan: steady by day, slightly more territorial at dusk/night
+  if (kind === 'mammoth' || kind === 'frost_boar') {
+    // Colossal tundra titan & armored tusker: steady by day, more territorial at dusk/night
     return {
-      speedScale: THREE.MathUtils.lerp(1.0, 1.1, night),
-      stalkSpeedScale: THREE.MathUtils.lerp(1.0, 1.12, night),
-      detectRadiusScale: THREE.MathUtils.lerp(1.0, 1.15, night),
+      speedScale: THREE.MathUtils.lerp(1.0, 1.12, night),
+      stalkSpeedScale: THREE.MathUtils.lerp(1.0, 1.14, night),
+      detectRadiusScale: THREE.MathUtils.lerp(1.0, 1.16, night),
       spookRadiusScale: 1.0,
-      windupScale: THREE.MathUtils.lerp(1.0, 0.94, night),
-      spawnWeightScale: THREE.MathUtils.lerp(0.95, 1.2, night),
+      windupScale: THREE.MathUtils.lerp(1.0, 0.92, night),
+      spawnWeightScale: THREE.MathUtils.lerp(0.95, 1.22, night),
     };
   }
 
-  // Nocturnal / crepuscular predators: wolf, lynx, polar_bear, sabertooth, aurora_fenrir
+  // Nocturnal / crepuscular predators: wolf, lynx, wolverine, polar_bear, sabertooth, aurora_fenrir
   const prowlBoost = Math.max(night, twilight * 0.65);
   return {
     speedScale: 0.92 + prowlBoost * 0.32,
@@ -248,44 +249,44 @@ export function computeEnvironmentLighting(
   const isDawn = hour < 12;
 
   // Base clear-sky diurnal colors
-  let skyHex = 0x7da4cf;
-  let sunColorHex = 0xfff0d4;
-  let sunIntensity = 2.25;
-  let hemiSkyHex = 0xd2e6ff;
-  let hemiGroundHex = 0x42546b;
-  let hemiIntensity = 0.85;
+  let skyHex = 0x7ea6d1;
+  let sunColorHex = 0xfff1d6;
+  let sunIntensity = 2.45;
+  let hemiSkyHex = 0xcbe4ff;
+  let hemiGroundHex = 0x3b526e;
+  let hemiIntensity = 0.78;
   let rimColorHex = 0x82b6ed;
-  let rimIntensity = 0.6;
-  let environmentIntensity = 0.85;
+  let rimIntensity = 0.64;
+  let environmentIntensity = 0.88;
   let exposure = 1.08;
 
   // Blend in golden-hour dawn / sunset warmth near horizon crossings
   if (twilight > 0.01) {
-    const horizonSky = isDawn ? 0xb57b7a : 0x8f5d6b;
-    const horizonSun = isDawn ? 0xffa66b : 0xff7b47;
+    const horizonSky = isDawn ? 0xb87b78 : 0x915b6d;
+    const horizonSun = isDawn ? 0xffaa6b : 0xff7a45;
     const horizonHemiSky = isDawn ? 0xebaa84 : 0xd98468;
     skyHex = blendColors(skyHex, horizonSky, twilight * 0.88);
     sunColorHex = blendColors(sunColorHex, horizonSun, twilight * 0.94);
     hemiSkyHex = blendColors(hemiSkyHex, horizonHemiSky, twilight * 0.78);
-    hemiGroundHex = blendColors(hemiGroundHex, 0x2f2b3f, twilight * 0.72);
-    sunIntensity = THREE.MathUtils.lerp(sunIntensity, 1.45, twilight * 0.85);
-    hemiIntensity = THREE.MathUtils.lerp(hemiIntensity, 0.52, twilight * 0.75);
+    hemiGroundHex = blendColors(hemiGroundHex, 0x2c283d, twilight * 0.74);
+    sunIntensity = THREE.MathUtils.lerp(sunIntensity, 1.55, twilight * 0.85);
+    hemiIntensity = THREE.MathUtils.lerp(hemiIntensity, 0.5, twilight * 0.75);
     environmentIntensity = THREE.MathUtils.lerp(environmentIntensity, 0.36, twilight * 0.85);
     exposure = THREE.MathUtils.lerp(exposure, 0.98, twilight * 0.75);
   }
 
   // Blend into deep Arctic night lit by cool silver moonlight
   if (night > 0.01) {
-    skyHex = blendColors(skyHex, 0x0a1326, night);
-    sunColorHex = blendColors(sunColorHex, 0x6f9ce8, night);
+    skyHex = blendColors(skyHex, 0x091326, night);
+    sunColorHex = blendColors(sunColorHex, 0x7aa8f0, night);
     hemiSkyHex = blendColors(hemiSkyHex, 0x1c3460, night);
-    hemiGroundHex = blendColors(hemiGroundHex, 0x090f1a, night);
-    rimColorHex = blendColors(rimColorHex, 0x568ce6, night);
-    sunIntensity = THREE.MathUtils.lerp(sunIntensity, 0.52, night);
-    hemiIntensity = THREE.MathUtils.lerp(hemiIntensity, 0.26, night);
-    rimIntensity = THREE.MathUtils.lerp(rimIntensity, 0.78, night);
-    environmentIntensity = THREE.MathUtils.lerp(environmentIntensity, 0.14, night);
-    exposure = THREE.MathUtils.lerp(exposure, 0.86, night);
+    hemiGroundHex = blendColors(hemiGroundHex, 0x080e19, night);
+    rimColorHex = blendColors(rimColorHex, 0x5c96f0, night);
+    sunIntensity = THREE.MathUtils.lerp(sunIntensity, 0.58, night);
+    hemiIntensity = THREE.MathUtils.lerp(hemiIntensity, 0.28, night);
+    rimIntensity = THREE.MathUtils.lerp(rimIntensity, 0.85, night);
+    environmentIntensity = THREE.MathUtils.lerp(environmentIntensity, 0.16, night);
+    exposure = THREE.MathUtils.lerp(exposure, 0.88, night);
   }
 
   // Weather atmospheric tinting layered smoothly on top of time-of-day
@@ -338,6 +339,7 @@ export function computeEnvironmentLighting(
     exposure,
     campfireGlowMult: 1.0 + twilight * 0.55 + night * 1.45,
     nightFactor: night,
+    twilightFactor: twilight,
     predatorEyeEmissive: 0.25 + twilight * 0.5 + night * 1.65,
   };
 }

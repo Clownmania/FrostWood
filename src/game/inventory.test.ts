@@ -11,11 +11,16 @@ import {
 import {
   computeBackpackItemCapacity,
   computeBackpackPreparedness,
+  computeTotalEquipmentSummary,
   countBackpackItems,
   craftItemToBackpack,
   createInitialBackpackInventory,
+  filterAndSortInventoryItems,
+  getInventorySlotOccupancy,
+  salvageBackpackItem,
   useBackpackItem,
 } from './inventory';
+import { computeGearBonuses, computeGearSetBonus } from './gear';
 
 test('crafting gears, hammer temper kits, tools, and traps stores items in backpack inventory', () => {
   const inv0 = createInitialBackpackInventory();
@@ -160,20 +165,125 @@ test('using backpack items triggers active buffs and deploys traps while linking
 });
 
 test('backpack item capacity scales with cargo capacity upgrades and blocks overflow crafting', () => {
-  assert.equal(computeBackpackItemCapacity(25), 12);
+  assert.equal(computeBackpackItemCapacity(25), 48);
   assert.ok(computeBackpackItemCapacity(65) > computeBackpackItemCapacity(25));
 
   const fullInv = createInitialBackpackInventory({
-    fire_starter: 12,
+    fire_starter: 48,
   });
   const res = { wood: 40, stone: 40, ice: 10, pelts: 20, gold: 100 };
   assert.equal(
     craftItemToBackpack({
       resources: res,
       inventory: fullInv,
-      maxItems: 12,
+      maxItems: 48,
       id: 'alpine_poultice',
     }),
     null,
   );
+});
+
+test('salvageBackpackItem frees slots with fair non-exploitable material recovery', () => {
+  const res0 = { wood: 20, stone: 20, ice: 5, pelts: 10, gold: 100 };
+  const inv0 = createInitialBackpackInventory({
+    clockwork_gear: 2,
+    aurora_charm: 1,
+  });
+
+  // Cannot salvage missing or invalid qty
+  assert.equal(
+    salvageBackpackItem({ resources: res0, inventory: inv0, id: 'snare_trap', qty: 1 }),
+    null,
+  );
+  assert.equal(
+    salvageBackpackItem({ resources: res0, inventory: inv0, id: 'aurora_charm', qty: 0 }),
+    null,
+  );
+
+  // Salvaging both clockwork_gear items never exceeds their original craft cost (3w, 4s, 5g)
+  const salvagedGears = salvageBackpackItem({
+    resources: res0,
+    inventory: inv0,
+    id: 'clockwork_gear',
+    qty: 99,
+  });
+  assert.ok(salvagedGears);
+  assert.equal(salvagedGears.salvagedQty, 2);
+  assert.equal(salvagedGears.inventory.clockwork_gear, 0);
+  assert.ok(salvagedGears.refunded.wood <= 3);
+  assert.ok(salvagedGears.refunded.stone <= 4);
+  assert.ok(salvagedGears.refunded.gold <= 5);
+  assert.equal(
+    salvagedGears.resources.wood,
+    res0.wood + salvagedGears.refunded.wood,
+  );
+
+  // Salvaging aurora_charm recovers ~35% of its resources
+  const salvagedCharm = salvageBackpackItem({
+    resources: res0,
+    inventory: inv0,
+    id: 'aurora_charm',
+    qty: 1,
+  });
+  assert.ok(salvagedCharm);
+  assert.equal(salvagedCharm.inventory.aurora_charm, 0);
+  assert.ok(salvagedCharm.refunded.gold > 0 && salvagedCharm.refunded.gold < 140);
+  assert.ok(salvagedCharm.refunded.ice >= 1);
+});
+
+test('filterAndSortInventoryItems, occupancy, and equipment summary support GUI controls', () => {
+  const inv = createInitialBackpackInventory({
+    snare_trap: 3,
+    aurora_charm: 1,
+    clockwork_gear: 2,
+  });
+
+  const trapsOnly = filterAndSortInventoryItems({
+    inventory: inv,
+    filter: 'traps',
+    sort: 'stocked',
+    searchQuery: '',
+  });
+  assert.deepEqual(
+    trapsOnly.map((r) => r.id),
+    ['snare_trap', 'frost_trap'],
+  );
+
+  const stockedMythic = filterAndSortInventoryItems({
+    inventory: inv,
+    filter: 'all',
+    sort: 'rarity',
+    searchQuery: 'aurora',
+    stockedOnly: true,
+  });
+  assert.deepEqual(
+    stockedMythic.map((r) => r.id),
+    ['aurora_charm'],
+  );
+
+  const occ = getInventorySlotOccupancy({
+    inventory: inv,
+    maxItems: 14,
+    maxEmptySocketsShown: 5,
+  });
+  assert.equal(occ.used, 6);
+  assert.equal(occ.free, 8);
+  assert.equal(occ.visibleEmptySockets, 5);
+  assert.equal(occ.hiddenEmptySockets, 3);
+
+  const gear = { coat: 3, boots: 3, gloves: 0, pack: 3 };
+  const summary = computeTotalEquipmentSummary({
+    gear,
+    gearBonuses: computeGearBonuses(gear),
+    gearSet: computeGearSetBonus(gear),
+    wingsTier: 2,
+    wingsEquipped: true,
+    equippedAscension: 'dark_matter',
+    preparedness: computeBackpackPreparedness(inv, INITIAL_BUFFS),
+  });
+  assert.equal(summary.equippedGearCount, 5); // 3 armor + wings + mythic ascension
+  assert.equal(summary.totalGearSlots, 6);
+  assert.ok(summary.damageMult > 1.5);
+  assert.ok(summary.moveSpeedMult > 1.3);
+  assert.ok(summary.coldResistPct > 50);
 });

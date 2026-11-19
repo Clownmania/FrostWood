@@ -79,6 +79,10 @@ export interface ZoneBossSpec {
   primaryColorHex: number;
   accentColorHex: number;
   telegraphColorHex: number;
+  elementalAuraType: 'root_snare' | 'cryo_blizzard' | 'abyssal_frost' | 'caldera_heat' | 'supernova_zero' | 'magma_forge';
+  auraRadius: number;
+  auraColorHex: number;
+  auraEffectLabel: string;
   patterns: BossAttackPatternSpec[];
   reward: BossRewardDropSpec;
 }
@@ -107,6 +111,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x3b2f26,
     accentColorHex: 0xf59e0b,
     telegraphColorHex: 0xf59e0b,
+    elementalAuraType: 'root_snare',
+    auraRadius: 10.5,
+    auraColorHex: 0xf59e0b,
+    auraEffectLabel: 'Root Entanglement (Movement Slow & Stamina Drain)',
     patterns: [
       {
         id: 'root_slam',
@@ -220,6 +228,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x0c4a6e,
     accentColorHex: 0x67e8f9,
     telegraphColorHex: 0x38bdf8,
+    elementalAuraType: 'cryo_blizzard',
+    auraRadius: 11.0,
+    auraColorHex: 0x38bdf8,
+    auraEffectLabel: 'Absolute Zero Aura (Rapid Warmth Drain)',
     patterns: [
       {
         id: 'blizzard_nova',
@@ -333,6 +345,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x1e1b4b,
     accentColorHex: 0x818cf8,
     telegraphColorHex: 0x6366f1,
+    elementalAuraType: 'abyssal_frost',
+    auraRadius: 11.5,
+    auraColorHex: 0x6366f1,
+    auraEffectLabel: 'Abyssal Rime Aura (Armor Vulnerability & Cold Drain)',
     patterns: [
       {
         id: 'rimefang_shatter',
@@ -446,6 +462,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x27171c,
     accentColorHex: 0xf43f5e,
     telegraphColorHex: 0xe11d48,
+    elementalAuraType: 'caldera_heat',
+    auraRadius: 12.0,
+    auraColorHex: 0xf43f5e,
+    auraEffectLabel: 'Permafrost Caldera Aura (Thermal Burn & Quake Hazard)',
     patterns: [
       {
         id: 'tectonic_permafrost',
@@ -559,6 +579,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x2e1065,
     accentColorHex: 0xe879f9,
     telegraphColorHex: 0xd946ef,
+    elementalAuraType: 'supernova_zero',
+    auraRadius: 12.5,
+    auraColorHex: 0xd946ef,
+    auraEffectLabel: 'Supernova Starlight Aura (Severe Cold & Starlight Slow)',
     patterns: [
       {
         id: 'supernova_cataclysm',
@@ -672,6 +696,10 @@ export const ZONE_BOSS_SPECS: Record<ZoneBossId, ZoneBossSpec> = {
     primaryColorHex: 0x332b36,
     accentColorHex: 0xff6b2c,
     telegraphColorHex: 0xf97316,
+    elementalAuraType: 'magma_forge',
+    auraRadius: 10.0,
+    auraColorHex: 0xf97316,
+    auraEffectLabel: 'Magma Forge Aura (Molten Heat Damage)',
     patterns: [
       {
         id: 'magma_cleave',

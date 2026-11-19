@@ -335,7 +335,10 @@ export function pickForestFlushSpecies(
       ? [
           { kind: 'frost_stag', weight: 3.0 },
           { kind: 'musk_ox', weight: 2.5 },
+          { kind: 'wolverine', weight: 2.2 },
+          { kind: 'frost_boar', weight: 1.8 },
           { kind: 'lynx', weight: 2.2 },
+          { kind: 'snow_owl', weight: 2.0 },
           { kind: 'polar_bear', weight: 2.0 },
           { kind: 'sabertooth', weight: 1.4 },
           { kind: 'wolf', weight: 2.0 },
@@ -344,9 +347,12 @@ export function pickForestFlushSpecies(
       : [
           { kind: 'stag', weight: 2.8 },
           { kind: 'fox', weight: 2.4 },
+          { kind: 'snow_owl', weight: 2.2 },
           { kind: 'lynx', weight: 2.0 },
+          { kind: 'wolverine', weight: 1.7 },
           { kind: 'wolf', weight: 2.0 },
           { kind: 'frost_stag', weight: 1.6 },
+          { kind: 'frost_boar', weight: 1.2 },
           { kind: 'polar_bear', weight: 1.2 },
           { kind: 'musk_ox', weight: 1.2 },
           { kind: 'hare', weight: 1.5 },

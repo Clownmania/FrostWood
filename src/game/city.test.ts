@@ -153,3 +153,71 @@ test('City Daily Quest NPC Valkyra Emberwing requires 30 Daily Quests to unlock 
   assert.equal(claimed30.wingsUnlockedNow, true);
 });
 
+test('Frostcave City spawns randomized high-quality chibi NPCs with consistent skeletal rigs and varied PBR material sets', async () => {
+  const {
+    CITY_CHIBI_PBR_MATERIAL_SETS,
+    generateCityNpcSpawnManifest,
+  } = await import('./city');
+
+  assert.ok(CITY_CHIBI_PBR_MATERIAL_SETS.length >= 7);
+  for (const matSet of CITY_CHIBI_PBR_MATERIAL_SETS) {
+    assert.ok(matSet.roughnessMin > 0 && matSet.roughnessMax <= 1);
+    assert.ok(matSet.roughnessMin < matSet.roughnessMax);
+    assert.ok(matSet.metalnessMax >= 0 && matSet.metalnessMax <= 1);
+    assert.ok(matSet.envMapIntensity > 0);
+  }
+
+  // Deterministic LCG RNG to verify variety and consistency
+  let seedA = 42;
+  const rngA = () => {
+    seedA = (seedA * 1664525 + 1013904223) >>> 0;
+    return seedA / 0x100000000;
+  };
+  let seedB = 987654321;
+  const rngB = () => {
+    seedB = (seedB * 1664525 + 1013904223) >>> 0;
+    return seedB / 0x100000000;
+  };
+
+  const manifestA = generateCityNpcSpawnManifest(rngA);
+  const manifestB = generateCityNpcSpawnManifest(rngB);
+
+  // All 4 traders get distinct chibi silhouettes, consistent Rig_Medium skeleton, and distinct PBR sets
+  const traderArchIds = new Set<string>();
+  const traderMatIds = new Set<string>();
+  for (const id of CITY_TRADER_ORDER) {
+    const tr = manifestA.traders[id];
+    assert.equal(tr.rigProfile, 'kaykit_rig_medium_chibi');
+    assert.ok(tr.archetype.spec.url.endsWith('.glb'));
+    traderArchIds.add(tr.archetype.id);
+    traderMatIds.add(tr.materialSet.id);
+  }
+  assert.equal(traderArchIds.size, CITY_TRADER_ORDER.length);
+  assert.equal(traderMatIds.size, CITY_TRADER_ORDER.length);
+
+  // All patrolling citizens use consistent chibi rig profile with varied PBR material sets & archetypes
+  assert.equal(manifestA.citizens.length, CITY_AMBIENT_NPCS.length);
+  const citizenMatIds = new Set<string>();
+  for (let i = 0; i < manifestA.citizens.length; i++) {
+    const c = manifestA.citizens[i];
+    assert.equal(c.rigProfile, 'kaykit_rig_medium_chibi');
+    citizenMatIds.add(c.materialSet.id);
+    if (i > 0) {
+      assert.notEqual(c.archetype.id, manifestA.citizens[i - 1].archetype.id);
+    }
+  }
+  assert.ok(citizenMatIds.size >= 3);
+
+  // Valkyra Emberwing uses herald PBR regalia + wings on consistent chibi rig
+  assert.equal(manifestA.questHerald.rigProfile, 'kaykit_rig_medium_chibi');
+  assert.equal(manifestA.questHerald.materialSet.id, 'ember_herald_regalia');
+  assert.equal(manifestA.questHerald.attachWings, true);
+  assert.notEqual(manifestA.questHerald.archetype.id, 'barbarian');
+
+  // Different RNG seeds produce randomized variation across city spawns
+  const sigA = manifestA.citizens.map((c) => `${c.archetype.id}:${c.materialSet.id}`).join('|');
+  const sigB = manifestB.citizens.map((c) => `${c.archetype.id}:${c.materialSet.id}`).join('|');
+  assert.notEqual(sigA, sigB);
+});
+
+

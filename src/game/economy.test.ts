@@ -267,8 +267,20 @@ test('lumberjack camp passively generates wood over time and upgrades cleanly', 
   assert.ok(ratesLv2.woodPerSec > ratesLv1.woodPerSec);
   assert.equal(ratesLv2.workerCount, 1);
 
-  const maxCamp = getNextBuildingUpgrade('lumberCamp', { ...INITIAL_LEVELS, lumberCamp: 3 });
+  const lv4Camp = getNextBuildingUpgrade('lumberCamp', { ...INITIAL_LEVELS, lumberCamp: 3 });
+  assert.ok(lv4Camp);
+  assert.equal(lv4Camp.level, 4);
+
+  const maxCamp = getNextBuildingUpgrade('lumberCamp', { ...INITIAL_LEVELS, lumberCamp: 4 });
   assert.equal(maxCamp, null);
+
+  const watchtowerLv1 = getNextBuildingUpgrade('watchtower', INITIAL_LEVELS);
+  assert.ok(watchtowerLv1);
+  assert.equal(watchtowerLv1.level, 1);
+
+  const granaryLv1 = getNextBuildingUpgrade('grandGranary', INITIAL_LEVELS);
+  assert.ok(granaryLv1);
+  assert.equal(granaryLv1.level, 1);
 });
 
 test('weather particle gusts and screen frost intensity escalate from clear to light snow to blizzard', () => {

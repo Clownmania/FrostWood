@@ -1,10 +1,55 @@
+import type { FishingHudState } from './fishing';
+import type { GameSettings } from './settings';
+
 export type GamePhase = 'title' | 'playing' | 'paused' | 'gameover';
+
+export type DrawerTab =
+  | 'camp'
+  | 'craft'
+  | 'inventory'
+  | 'travel'
+  | 'city'
+  | 'festival'
+  | 'bestiary'
+  | 'pets'
+  | 'achievements'
+  | 'skills'
+  | 'daily'
+  | 'saves'
+  | 'mystery'
+  | 'settings';
 
 export type WeatherKind = 'clear' | 'light_snow' | 'blizzard';
 
-export type ActiveTool = 'axe' | 'bow';
+export type ActiveTool = 'axe' | 'bow' | 'rod';
 
-export type TreeKind = 'pine' | 'spruce' | 'elder';
+export type TreeKind = 'pine' | 'spruce' | 'elder' | 'pyrewood' | 'void_heartwood';
+
+export type BoulderKind = 'granite' | 'brimstone_ore' | 'voltaic_ore' | 'dark_matter_ore';
+
+export type RareMaterialId =
+  | 'pyrewood_heart'
+  | 'brimstone_slag'
+  | 'voltaic_core'
+  | 'venom_resin'
+  | 'void_timber'
+  | 'dark_matter_ore';
+
+export type RareMaterialMap = Record<RareMaterialId, number>;
+
+export type MythicAscensionId =
+  | 'infernal_fire'
+  | 'glacial_frost'
+  | 'thunder_lightning'
+  | 'venom_poison'
+  | 'dark_matter';
+
+export type MysteryShopItemId =
+  | 'pyreheart_elixir'
+  | 'absolute_zero_draught'
+  | 'fulminite_capacitor'
+  | 'blight_venom_vial'
+  | 'dark_matter_singularity';
 
 export type AnimalRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'mythic';
 export type ItemRarity = AnimalRarity;
@@ -15,9 +60,12 @@ export type AnimalKind =
   | 'stag'
   | 'wolf'
   | 'lynx'
+  | 'snow_owl'
+  | 'wolverine'
   | 'polar_bear'
   | 'frost_stag'
   | 'musk_ox'
+  | 'frost_boar'
   | 'mammoth'
   | 'sabertooth'
   | 'aurora_fenrir';
@@ -43,6 +91,8 @@ export type BuildingId =
   | 'sawmill'
   | 'tannery'
   | 'forge'
+  | 'watchtower'
+  | 'grandGranary'
   | 'tamingPen'
   | 'stormShelter'
   | 'windbreak'
@@ -159,10 +209,12 @@ export interface UpgradeLevels {
   bow: number; // 1..7
   coat: number; // 1..4
   cabin: number; // 1..5
-  lumberCamp: number; // 0..3
-  sawmill: number; // 0..3
-  tannery: number; // 0..3
-  forge: number; // 0..3
+  lumberCamp: number; // 0..4
+  sawmill: number; // 0..4
+  tannery: number; // 0..4
+  forge: number; // 0..4
+  watchtower?: number; // 0..3
+  grandGranary?: number; // 0..3
   tamingPen?: number; // 0..3
   stormShelter?: number; // 0..3
   windbreak?: number; // 0..3
@@ -281,6 +333,25 @@ export interface SkillBonuses {
   campfireRecoveryMult: number;
 }
 
+export type SkillGatheringResource = 'wood' | 'stone' | 'ice' | 'pelts' | 'pack';
+
+export interface ActiveSkillPerkPulse {
+  active: boolean;
+  perkId: SkillPerkId | null;
+  perkName: string;
+  rank: number;
+  maxRank: number;
+  branch: SkillBranch;
+  resource: SkillGatheringResource | null;
+  bonusPct: number;
+  secondaryBonusText: string;
+  taskLabel: string;
+  timeRemaining: number;
+  duration: number;
+  pulseNonce: number;
+  activeResources: Partial<Record<SkillGatheringResource, number>>;
+}
+
 export interface AchievementCounters {
   woodCollected: number;
   treesFelled: number;
@@ -340,6 +411,11 @@ export interface PersistentProgress {
   cityDailyQuestsCompleted?: number;
   achievementsUnlocked?: string[];
   achievementCounters?: AchievementCounters;
+  dailyLogin?: {
+    streakDay: number;
+    lastClaimedDateKey: string | null;
+    totalDaysClaimed: number;
+  };
 }
 
 export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night';
@@ -822,6 +898,35 @@ export interface ZoneWeatherEffectState {
   infrastructureHint: string;
 }
 
+export interface HarvestStreakHudInfo {
+  count: number;
+  timeRemaining: number;
+  maxTime: number;
+  yieldBonusPct: number;
+}
+
+export interface HousingHudState {
+  inCabin: boolean;
+  nearCabinDoor: boolean;
+  nearInteriorDoor: boolean;
+  nearBed: boolean;
+  isSleeping: boolean;
+  sleepProgress: number;
+  sleepTargetDay: number;
+  cabinTier: number;
+  cabinTitle: string;
+  bedName: string;
+}
+
+export interface CombatDamagePopup {
+  id: number;
+  xPct: number;
+  yPct: number;
+  amount: number;
+  crit: boolean;
+  isPlayerDamage: boolean;
+}
+
 export interface HudSnapshot {
   phase: GamePhase;
   victory: boolean;
@@ -829,6 +934,9 @@ export interface HudSnapshot {
   resources: ResourceCounts;
   resourceTrends: ResourceTrendMap;
   resourceTrendDeltas: ResourceTrendDeltaMap;
+  harvestStreak: HarvestStreakHudInfo;
+  housing: HousingHudState;
+  fishing: FishingHudState;
   levels: UpgradeLevels;
   gear: GearLevels;
   unlockedGear: GearLevels;
@@ -853,6 +961,8 @@ export interface HudSnapshot {
   maxHp: number;
   warmth: number;
   maxWarmth: number;
+  stamina: number;
+  maxStamina: number;
   nearCampfire: boolean;
   nearMarket: boolean;
   nearCraftingStation: boolean;
@@ -866,6 +976,7 @@ export interface HudSnapshot {
   bestiary: BestiaryMap;
   skills: PlayerSkillsState;
   skillBonuses: SkillBonuses;
+  skillPerkPulse: ActiveSkillPerkPulse;
   packUsed: number;
   packCapacity: number;
   backpackInventory: BackpackInventoryMap;
@@ -874,6 +985,7 @@ export interface HudSnapshot {
   backpackPreparedness: BackpackPreparednessBonus;
   deployedTraps: DeployedTrapHudInfo[];
   muted: boolean;
+  settings: GameSettings;
   endlessMode: boolean;
   woodRate: number;
   goldRate: number;
@@ -897,5 +1009,88 @@ export interface HudSnapshot {
   pets: PetsHudState;
   chatLogs: ChatLogEntry[];
   toastText: string | null;
+  dailyLogin: DailyLoginState;
+  saveSlots: SaveSlotsMap;
+  rareMaterials: RareMaterialMap;
+  unlockedAscensions: MythicAscensionId[];
+  equippedAscension: MythicAscensionId | null;
+  nearMysteryShop: boolean;
+  cameraOrbitDeg: number;
+  bowAutoAim: boolean;
+  bowAutoAttack: boolean;
+  autoHarvest: boolean;
+  bowLockedTarget: {
+    label: string;
+    kind: 'hunter' | 'boss' | 'animal';
+    distance: number;
+    hp: number;
+    maxHp: number;
+    isHostile: boolean;
+  } | null;
+  damagePopups?: CombatDamagePopup[];
+  engineReady?: boolean;
+  fpsEstimate?: number;
 }
+
+export interface DailyLoginRewardSpec {
+  day: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  title: string;
+  subtitle: string;
+  rarity: ItemRarity;
+  resources: Partial<ResourceCounts>;
+  craftItems: Partial<Record<CraftItemId, number>>;
+}
+
+export interface DailyLoginState {
+  streakDay: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  canClaimToday: boolean;
+  claimedToday: boolean;
+  lastClaimedDateKey: string | null;
+  totalDaysClaimed: number;
+  todayReward: DailyLoginRewardSpec;
+  schedule: DailyLoginRewardSpec[];
+}
+
+export type SaveSlotId = 'autosave' | 'slot1' | 'slot2' | 'slot3';
+
+export interface SavedGameSlot {
+  slotId: SaveSlotId;
+  label: string;
+  savedAt: string;
+  zone: ZoneId;
+  zoneName: string;
+  cabinTier: number;
+  dayNumber: number;
+  timeOfDay: number;
+  weather: WeatherKind;
+  weatherTimer: number;
+  endlessMode: boolean;
+  victory: boolean;
+  playerX: number;
+  playerZ: number;
+  playerYaw: number;
+  hp: number;
+  maxHp: number;
+  warmth: number;
+  maxWarmth: number;
+  activeTool: ActiveTool;
+  resources: ResourceCounts;
+  levels: UpgradeLevels;
+  gear: GearLevels;
+  unlockedGear: GearLevels;
+  wingsTier: number;
+  wingsEquipped: boolean;
+  backpackInventory: BackpackInventoryMap;
+  activeBuffs: ActiveCraftBuffs;
+  stats: RunStats;
+  tamedPets: TamedPetRecord[];
+  activePetUid: string | null;
+  rareMaterials?: RareMaterialMap;
+  unlockedAscensions?: MythicAscensionId[];
+  equippedAscension?: MythicAscensionId | null;
+}
+
+export type SaveSlotsMap = Record<SaveSlotId, SavedGameSlot | null>;
+
+
 

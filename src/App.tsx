@@ -18,6 +18,11 @@ import {
 } from './game/economy';
 import { createInitialSeasonalEvent } from './game/events';
 import { createInitialStormShelterState } from './game/shelter';
+import { getCabinComfortSpec } from './game/housing';
+import {
+  buildFishingHudState,
+  createInitialFishingState,
+} from './game/fishing';
 import { FrostwoodEngine } from './game/engine';
 import { createEmptyBestiary } from './game/bestiary';
 import {
@@ -27,6 +32,7 @@ import {
 import {
   BASE_BACKPACK_CAPACITY,
   computeSkillBonuses,
+  createInitialSkillPerkPulse,
   createInitialSkillsState,
 } from './game/skills';
 import {
@@ -36,7 +42,12 @@ import {
   getWingsOfFireSpec,
 } from './game/gear';
 import { createCityDailyQuest } from './game/city';
-import { createDefaultLifetimeStats } from './game/persistence';
+import {
+  createDefaultLifetimeStats,
+  createDefaultProgress,
+  createEmptySaveSlots,
+  evaluateDailyLoginState,
+} from './game/persistence';
 import {
   computeBackpackItemCapacity,
   computeBackpackPreparedness,
@@ -48,15 +59,24 @@ import {
   INITIAL_RESOURCE_TREND_DELTAS,
 } from './game/trends';
 import { buildLootScalingHudInfo } from './game/loot';
+import { createEmptyRareMaterials } from './game/mystery';
 import { buildZoneHudInfo } from './game/zones';
+import {
+  type GameSettings,
+  loadSettingsFromStorage,
+} from './game/settings';
 import type {
   ActiveTool,
   BuildingId,
   CraftItemId,
+  DrawerTab,
   FestivalBuildingId,
   GearSlotId,
   HudSnapshot,
+  MysteryShopItemId,
+  MythicAscensionId,
   RivalHunterArchetypeId,
+  SaveSlotId,
   SeasonalEventId,
   SkillPerkId,
   ToolUpgradeId,
@@ -74,6 +94,12 @@ const DEFAULT_HUD: HudSnapshot = {
   resources: { ...INITIAL_RESOURCES },
   resourceTrends: { ...INITIAL_RESOURCE_TRENDS },
   resourceTrendDeltas: { ...INITIAL_RESOURCE_TREND_DELTAS },
+  harvestStreak: {
+    count: 0,
+    timeRemaining: 0,
+    maxTime: 12,
+    yieldBonusPct: 0,
+  },
   levels: { ...INITIAL_LEVELS },
   gear: INITIAL_GEAR,
   unlockedGear: INITIAL_GEAR,
@@ -87,6 +113,8 @@ const DEFAULT_HUD: HudSnapshot = {
   maxHp: 100,
   warmth: 100,
   maxWarmth: 100,
+  stamina: 100,
+  maxStamina: 100,
   nearCampfire: true,
   nearMarket: true,
   nearCraftingStation: false,
@@ -103,6 +131,7 @@ const DEFAULT_HUD: HudSnapshot = {
   bestiary: createEmptyBestiary(),
   skills: INITIAL_SKILLS,
   skillBonuses: computeSkillBonuses(INITIAL_SKILLS),
+  skillPerkPulse: createInitialSkillPerkPulse(),
   packUsed: 0,
   packCapacity: BASE_BACKPACK_CAPACITY,
   backpackInventory: INITIAL_BACKPACK_INVENTORY,
@@ -111,6 +140,7 @@ const DEFAULT_HUD: HudSnapshot = {
   backpackPreparedness: computeBackpackPreparedness(INITIAL_BACKPACK_INVENTORY, INITIAL_BUFFS),
   deployedTraps: [],
   muted: false,
+  settings: loadSettingsFromStorage(),
   endlessMode: false,
   woodRate: 0,
   goldRate: 0,
@@ -168,29 +198,58 @@ const DEFAULT_HUD: HudSnapshot = {
   },
   chatLogs: [],
   toastText: null,
+  dailyLogin: evaluateDailyLoginState(createDefaultProgress(0)),
+  saveSlots: createEmptySaveSlots(),
+  rareMaterials: createEmptyRareMaterials(),
+  unlockedAscensions: [],
+  equippedAscension: null,
+  nearMysteryShop: false,
+  cameraOrbitDeg: 0,
+  bowAutoAim: true,
+  bowAutoAttack: true,
+  autoHarvest: true,
+  bowLockedTarget: null,
+  housing: {
+    inCabin: false,
+    nearCabinDoor: false,
+    nearInteriorDoor: false,
+    nearBed: false,
+    isSleeping: false,
+    sleepProgress: 0,
+    sleepTargetDay: 2,
+    cabinTier: INITIAL_LEVELS.cabin,
+    cabinTitle: getCabinComfortSpec(INITIAL_LEVELS.cabin).title,
+    bedName: getCabinComfortSpec(INITIAL_LEVELS.cabin).bedName,
+  },
+  fishing: buildFishingHudState(
+    createInitialFishingState(),
+    0,
+    4.6,
+    'level1',
+    ['common', 'uncommon', 'rare', 'epic', 'mythic'],
+    0,
+    0.18,
+  ),
+  damagePopups: [],
+  engineReady: false,
+  fpsEstimate: 60,
 };
-
-type DrawerTab =
-  | 'camp'
-  | 'craft'
-  | 'inventory'
-  | 'city'
-  | 'festival'
-  | 'bestiary'
-  | 'pets'
-  | 'achievements'
-  | 'skills';
 
 const VALID_DRAWER_TABS = new Set<DrawerTab>([
   'camp',
   'craft',
   'inventory',
+  'travel',
   'city',
   'festival',
   'bestiary',
   'pets',
   'achievements',
   'skills',
+  'daily',
+  'saves',
+  'mystery',
+  'settings',
 ]);
 
 interface DrawerState {
@@ -309,6 +368,14 @@ export default function App() {
     const initialChestShowcase = params.get('chest') === '1';
     const initialPetShowcase = params.get('pet') === '1';
     const initialBossShowcase = params.get('boss') === '1';
+    const initialCabinShowcase = params.get('cabin') === '1';
+    const initialFishingShowcase = params.get('fishing') === '1';
+    const iceRaw = params.get('ice');
+    const iceParsed = iceRaw !== null ? Number(iceRaw) : NaN;
+    const initialIceThickness =
+      iceRaw !== null && Number.isFinite(iceParsed)
+        ? Math.max(0, Math.min(1, iceParsed))
+        : null;
 
     const engine = new FrostwoodEngine(
       mountEl,
@@ -333,6 +400,9 @@ export default function App() {
       initialChestShowcase,
       initialPetShowcase,
       initialBossShowcase,
+      initialCabinShowcase,
+      initialFishingShowcase,
+      initialIceThickness,
     );
     engineRef.current = engine;
     setHud(engine.getHudSnapshot());
@@ -432,6 +502,10 @@ export default function App() {
     engineRef.current?.craftAndUseItem(id);
   }, []);
 
+  const handleSalvageBackpackItem = useCallback((id: CraftItemId, qty = 1) => {
+    engineRef.current?.salvageBackpackItem(id, qty);
+  }, []);
+
   const handleUnlockSkillPerk = useCallback((id: SkillPerkId) => {
     engineRef.current?.unlockSkillPerk(id);
   }, []);
@@ -442,6 +516,14 @@ export default function App() {
 
   const handleToggleMute = useCallback(() => {
     engineRef.current?.toggleMute();
+  }, []);
+
+  const handleUpdateSettings = useCallback((partial: Partial<GameSettings>) => {
+    engineRef.current?.updateSettings(partial);
+  }, []);
+
+  const handleResetSettings = useCallback(() => {
+    engineRef.current?.resetSettings();
   }, []);
 
   const handlePause = useCallback(() => {
@@ -493,6 +575,71 @@ export default function App() {
     engineRef.current?.attractWildStray();
   }, []);
 
+  const handleClaimDailyLoginReward = useCallback(() => {
+    engineRef.current?.claimDailyLoginReward();
+  }, []);
+
+  const handleSaveGame = useCallback((slotId: SaveSlotId) => {
+    engineRef.current?.saveGame(slotId);
+  }, []);
+
+  const handleLoadGame = useCallback((slotId: SaveSlotId) => {
+    setDrawer((prev) => (prev.open ? { ...prev, open: false } : prev));
+    engineRef.current?.loadGame(slotId);
+  }, []);
+
+  const handleDeleteSave = useCallback((slotId: SaveSlotId) => {
+    engineRef.current?.deleteSave(slotId);
+  }, []);
+
+  const handleUnlockAscension = useCallback((id: MythicAscensionId) => {
+    engineRef.current?.unlockMythicAscension(id);
+  }, []);
+
+  const handleEquipAscension = useCallback((id: MythicAscensionId | null) => {
+    engineRef.current?.equipMythicAscension(id);
+  }, []);
+
+  const handleBuyMysteryItem = useCallback((id: MysteryShopItemId) => {
+    engineRef.current?.buyMysteryShopItem(id);
+  }, []);
+
+  const handleToggleBowAutoAttack = useCallback(() => {
+    engineRef.current?.toggleBowAutoAttack();
+  }, []);
+
+  const handleToggleBowAutoAim = useCallback(() => {
+    engineRef.current?.toggleBowAutoAim();
+  }, []);
+
+  const handleToggleAutoHarvest = useCallback(() => {
+    engineRef.current?.toggleAutoHarvest();
+  }, []);
+
+  const handleEnterCabin = useCallback(() => {
+    engineRef.current?.enterCabin();
+  }, []);
+
+  const handleExitCabin = useCallback(() => {
+    engineRef.current?.exitCabin();
+  }, []);
+
+  const handleSleepInCabin = useCallback(() => {
+    engineRef.current?.sleepInCabin();
+  }, []);
+
+  const handleTravelToFishingLake = useCallback(() => {
+    engineRef.current?.travelToFishingLake();
+  }, []);
+
+  const handleCastOrHookFish = useCallback(() => {
+    engineRef.current?.castOrHookFishing();
+  }, []);
+
+  const handleSetFishingReel = useCallback((held: boolean) => {
+    engineRef.current?.setFishingReelHeld(held);
+  }, []);
+
   return (
     <main className="relative w-full h-full overflow-hidden">
       {/* Isolated WebGL canvas mount — never re-rendered by HUD state */}
@@ -502,12 +649,39 @@ export default function App() {
         className="fixed inset-0 w-full h-full"
       />
 
+      {!hud.engineReady && (
+        <div
+          data-testid="loading-screen"
+          className="fixed inset-0 z-50 pointer-events-none flex flex-col items-center justify-center bg-[#0a1320] text-[#f4efe6] transition-opacity duration-300"
+        >
+          <div className="aaa-frame rounded-2xl px-7 py-6 flex flex-col items-center gap-3 text-center max-w-sm mx-4">
+            <h1 className="font-display font-bold text-xl tracking-[0.2em] uppercase text-[#f6c344]">
+              FROSTWOOD TYCOON
+            </h1>
+            <p className="text-xs font-medium tracking-wide text-[#9db4cb]">
+              Initializing Glacial Engine &amp; Shaders...
+            </p>
+            <div className="hud-meter-track w-56 h-2 rounded-sm overflow-hidden">
+              <div className="h-full w-2/3 bg-gradient-to-r from-[#38bdf8] via-[#7be0ff] to-[#f6c344]" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {hud.phase === 'title' && (
         <TitleOverlay
           bestGold={hud.bestGold}
           lifetimeStats={hud.lifetimeStats}
           hallOfFame={hud.hallOfFame}
+          dailyLogin={hud.dailyLogin}
+          saveSlots={hud.saveSlots}
+          settings={hud.settings}
           onStart={handleStart}
+          onClaimDailyLoginReward={handleClaimDailyLoginReward}
+          onLoadGame={handleLoadGame}
+          onDeleteSave={handleDeleteSave}
+          onUpdateSettings={handleUpdateSettings}
+          onResetSettings={handleResetSettings}
         />
       )}
 
@@ -540,10 +714,14 @@ export default function App() {
           onCraftItem={handleCraftItem}
           onUseBackpackItem={handleUseBackpackItem}
           onCraftAndUseItem={handleCraftAndUseItem}
+          onSalvageBackpackItem={handleSalvageBackpackItem}
           onUnlockSkillPerk={handleUnlockSkillPerk}
           onRespecSkills={handleRespecSkills}
           onToggleMute={handleToggleMute}
           onPause={handlePause}
+          onTitle={handleTitle}
+          onUpdateSettings={handleUpdateSettings}
+          onResetSettings={handleResetSettings}
           onUsePortal={handleUsePortal}
           onSelectZone={handleSelectZone}
           onActivateHuntersSight={handleActivateHuntersSight}
@@ -552,6 +730,22 @@ export default function App() {
           onSetActivePet={handleSetActivePet}
           onPetCompanion={handlePetCompanion}
           onAttractWildStray={handleAttractWildStray}
+          onClaimDailyLoginReward={handleClaimDailyLoginReward}
+          onSaveGame={handleSaveGame}
+          onLoadGame={handleLoadGame}
+          onDeleteSave={handleDeleteSave}
+          onUnlockAscension={handleUnlockAscension}
+          onEquipAscension={handleEquipAscension}
+          onBuyMysteryItem={handleBuyMysteryItem}
+          onToggleBowAutoAttack={handleToggleBowAutoAttack}
+          onToggleBowAutoAim={handleToggleBowAutoAim}
+          onToggleAutoHarvest={handleToggleAutoHarvest}
+          onEnterCabin={handleEnterCabin}
+          onExitCabin={handleExitCabin}
+          onSleepInCabin={handleSleepInCabin}
+          onTravelToFishingLake={handleTravelToFishingLake}
+          onCastOrHookFish={handleCastOrHookFish}
+          onSetFishingReel={handleSetFishingReel}
         />
       )}
 
@@ -562,8 +756,13 @@ export default function App() {
           onRestart={handleStart}
           onContinueEndless={handleContinueEndless}
           onTitle={handleTitle}
+          onSaveGame={handleSaveGame}
+          onLoadGame={handleLoadGame}
+          onUpdateSettings={handleUpdateSettings}
+          onResetSettings={handleResetSettings}
         />
       )}
     </main>
   );
 }
+
